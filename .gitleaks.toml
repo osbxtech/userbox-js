@@ -1,0 +1,15 @@
+# gitleaks configuration for userbox-js.
+# Extends the default rules. Every allowlist entry is a documented fake fixture.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented fake test fixtures"
+paths = [
+  # node/tests/credentials-not-logged.unit.test.ts must use the real API-key
+  # prefixes (ub_live_, ub_prod_, ub_stg_, ub_dev_): it proves that a key with
+  # each prefix never appears in errors or logs. The key bodies are the
+  # obvious sentinel FORBIDDEN_TOKEN_DO_NOT_LEAK, never a real key.
+  '''^node/tests/credentials-not-logged\.unit\.test\.ts$''',
+]

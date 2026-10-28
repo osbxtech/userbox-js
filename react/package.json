@@ -1,0 +1,89 @@
+{
+  "name": "@userbox/react",
+  "version": "1.0.0-alpha.0",
+  "description": "Official TypeScript/React frontend SDK for the Userbox identity and authorization platform.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./nextjs": {
+      "types": "./dist/nextjs.d.ts",
+      "import": "./dist/nextjs.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "next": "^14.2.0 || ^15.0.0",
+    "react": "^18.2.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.2",
+    "@testing-library/react": "^16.0.1",
+    "@types/node": "^22.9.0",
+    "@types/react": "^19.0.0",
+    "@typescript-eslint/parser": "^8.20.0",
+    "eslint": "^9.18.0",
+    "jsdom": "^25.0.1",
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/osbxtech/userbox-js.git",
+    "directory": "react"
+  },
+  "homepage": "https://docs.userbox.dev",
+  "bugs": {
+    "url": "https://github.com/osbxtech/userbox-js/issues"
+  },
+  "keywords": [
+    "userbox",
+    "authentication",
+    "react",
+    "next.js",
+    "rbac",
+    "permissions",
+    "identity",
+    "sdk"
+  ],
+  "author": "OsbxTech <opensource@osbxtech.nl>",
+  "license": "Apache-2.0"
+}

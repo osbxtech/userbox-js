@@ -1,0 +1,63 @@
+{
+  "name": "@userbox/node",
+  "version": "1.0.0-alpha.0",
+  "description": "Official TypeScript SDK for the Userbox identity and authorization platform.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:types": "tsd",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "clean": "rm -rf dist",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/parser": "^8.20.0",
+    "eslint": "^9.18.0",
+    "tsd": "^0.31.2",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  },
+  "tsd": {
+    "directory": "tests"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/osbxtech/userbox-js.git",
+    "directory": "node"
+  },
+  "homepage": "https://docs.userbox.dev",
+  "bugs": {
+    "url": "https://github.com/osbxtech/userbox-js/issues"
+  },
+  "author": "OsbxTech <opensource@osbxtech.nl>",
+  "license": "Apache-2.0"
+}

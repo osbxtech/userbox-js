@@ -1,0 +1,62 @@
+[
+  {
+    "package": "react",
+    "operation": "POST /v1/auth/refresh",
+    "sends": ["refresh_token"],
+    "reads": ["access_token", "refresh_token", "expires_in"]
+  },
+  {
+    "package": "react",
+    "operation": "POST /v1/auth/logout",
+    "sends": ["refresh_token"],
+    "reads": []
+  },
+  {
+    "package": "react",
+    "operation": "GET /v1/users/me",
+    "sends": [],
+    "reads": ["email", "full_name"]
+  },
+  {
+    "package": "react",
+    "operation": "GET /v1/access/permissions",
+    "sends": ["user_id", "workspace_id"],
+    "reads": ["permissions"]
+  },
+  {
+    "package": "node",
+    "operation": "POST /v1/access/check",
+    "sends": ["user_id", "workspace_id", "permission_key"],
+    "reads": ["allowed"]
+  },
+  {
+    "package": "node",
+    "operation": "GET /v1/users/{user_id}",
+    "sends": [],
+    "reads": ["id", "email", "email_verified_at", "full_name", "avatar_url", "status", "last_login_at", "created_at", "updated_at", "deleted_at"]
+  },
+  {
+    "package": "node",
+    "operation": "GET /v1/workspaces/{workspace_id}",
+    "sends": [],
+    "reads": ["id", "tenant_id", "name", "slug", "external_id", "status", "created_at", "updated_at"]
+  },
+  {
+    "package": "node",
+    "operation": "GET /v1/memberships",
+    "sends": ["user_id", "page", "per_page"],
+    "reads": ["items", "total", "page", "per_page"]
+  },
+  {
+    "package": "node",
+    "operation": "GET /v1/access/permissions",
+    "sends": ["user_id", "workspace_id"],
+    "reads": ["permissions"]
+  },
+  {
+    "package": "node",
+    "operation": "GET /v1/audit-logs",
+    "sends": ["page", "per_page"],
+    "reads": ["items", "total", "page", "per_page"]
+  }
+]
