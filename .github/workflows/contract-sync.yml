@@ -1,0 +1,123 @@
+name: contract-sync
+
+# Daily: compares the tenant API description deployed on the Userbox test
+# platform with the vendored contract/tenant-openapi.json (ignoring
+# info.x-userbox-platform-commit). On a difference it runs the contract check
+# against the deployed copy, uploads that copy as an artifact, and opens or
+# updates one tracking issue. The job fails when the check fails.
+#
+# It never opens a pull request: "Allow GitHub Actions to create and approve
+# pull requests" stays off. A maintainer runs `pnpm contract:sync` locally and
+# opens the sync pull request. The fetched JSON is data only: it is written to
+# a file and compared with jq, never interpolated into a shell command.
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: contract-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    env:
+      ISSUE_TITLE: "contract: sync tenant API description"
+    steps:
+      # The runner context is not available in job-level env:.
+      - name: Paths
+        run: |
+          printf 'LIVE=%s/tenant-openapi.live.json\nREPORT=%s/contract-report.md\n' "$RUNNER_TEMP" "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Fetch the deployed description
+        env:
+          USERBOX_TENANT_OPENAPI_URL: ${{ vars.USERBOX_TENANT_OPENAPI_URL }}
+        run: |
+          if [ -z "$USERBOX_TENANT_OPENAPI_URL" ]; then
+            printf '::error::the repository variable USERBOX_TENANT_OPENAPI_URL is not set\n'
+            exit 1
+          fi
+          node scripts/sync-contract.mjs --out "$LIVE"
+
+      - name: Compare with the vendored copy
+        id: compare
+        run: |
+          strip='del(.info["x-userbox-platform-commit"])'
+          jq -S "$strip" contract/tenant-openapi.json > "$RUNNER_TEMP/vendored.cmp.json"
+          jq -S "$strip" "$LIVE" > "$RUNNER_TEMP/live.cmp.json"
+          if cmp -s "$RUNNER_TEMP/vendored.cmp.json" "$RUNNER_TEMP/live.cmp.json"; then
+            printf 'drift=false\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'drift=true\n' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Contract check against the deployed description
+        id: check
+        if: steps.compare.outputs.drift == 'true'
+        run: |
+          set +e
+          node scripts/check-contract.mjs --description "$LIVE" > "$RUNNER_TEMP/check.txt" 2>&1
+          status=$?
+          set -e
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          vendored_commit="$(jq -r '.info["x-userbox-platform-commit"] // "unknown"' contract/tenant-openapi.json)"
+          live_commit="$(jq -r '.info["x-userbox-platform-commit"] // "unknown"' "$LIVE")"
+          if [ "$status" -eq 0 ]; then verdict="compatible: every SDK call still matches"; else verdict="**incompatible**: fix the SDK or the platform before the next release"; fi
+          {
+            printf 'The tenant API description deployed on the test platform differs from `contract/tenant-openapi.json`.\n\n'
+            printf -- '- Vendored platform commit: `%s`\n' "$vendored_commit"
+            printf -- '- Deployed platform commit: `%s`\n' "$live_commit"
+            printf -- '- Contract check: %s\n' "$verdict"
+            printf -- '- Run: %s/%s/actions/runs/%s (artifact `tenant-openapi-live`)\n\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            printf 'Check output:\n\n~~~~text\n'
+            cat "$RUNNER_TEMP/check.txt"
+            printf '~~~~\n\nTo sync: `pnpm contract:sync`, then `pnpm check:contract`, and open a pull request with the new `contract/tenant-openapi.json`.\n'
+          } > "$REPORT"
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.compare.outputs.drift == 'true'
+        with:
+          name: tenant-openapi-live
+          path: ${{ env.LIVE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Open or update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRIFT: ${{ steps.compare.outputs.drift }}
+        run: |
+          number="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$ISSUE_TITLE\"" \
+            --json number,title --jq "map(select(.title == env.ISSUE_TITLE)) | .[0].number // empty")"
+          if [ "$DRIFT" = "true" ]; then
+            if [ -n "$number" ]; then
+              gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body-file "$REPORT"
+            else
+              gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body-file "$REPORT"
+            fi
+          elif [ -n "$number" ]; then
+            gh issue close "$number" --repo "$GITHUB_REPOSITORY" \
+              --comment "The vendored description matches the deployed one again (run $GITHUB_RUN_ID)."
+          fi
+
+      - name: Fail when the deployed description breaks an SDK call
+        if: steps.compare.outputs.drift == 'true' && steps.check.outputs.status != '0'
+        run: |
+          printf '::error::the deployed tenant API description is incompatible with contract/calls.json (see the tracking issue)\n'
+          exit 1
