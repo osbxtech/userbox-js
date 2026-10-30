@@ -24,6 +24,7 @@ nvm use            # Node 24, from .nvmrc
 corepack enable    # pnpm, pinned in package.json
 pnpm install
 pnpm build && pnpm lint && pnpm typecheck && pnpm test && pnpm check:pack
+pnpm check:contract && pnpm test:scripts
 ```
 
 `pnpm test` runs after `pnpm build`: some architectural tests inspect the built
