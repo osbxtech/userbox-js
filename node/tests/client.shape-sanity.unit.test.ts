@@ -87,7 +87,7 @@ describe("top-level shape sanity guard", () => {
 
   describe("getUserMemberships()", () => {
     it("throws UNKNOWN_ERROR when 2xx body is missing `items`", async () => {
-      mock2xx({ total: 0, page: 1, per_page: 20 }, 200);
+      mock2xx({ total: 0, page: 1, page_size: 20 }, 200);
       const client = makeClient();
       const err = await captureError(client.getUserMemberships({ userId: "u" }));
       expect(err.status).toBe(200);
@@ -95,10 +95,24 @@ describe("top-level shape sanity guard", () => {
     });
 
     it("throws UNKNOWN_ERROR when `items` is not an array", async () => {
-      mock2xx({ items: null, total: 0, page: 1, per_page: 20 }, 200);
+      mock2xx({ items: null, total: 0, page: 1, page_size: 20 }, 200);
       const client = makeClient();
       const err = await captureError(client.getUserMemberships({ userId: "u" }));
       expect(err.code).toBe("UNKNOWN_ERROR");
+    });
+
+    it("throws UNKNOWN_ERROR on the audit-log key `per_page` instead of `page_size`", async () => {
+      mock2xx({ items: [], total: 0, page: 1, per_page: 20 }, 200);
+      const client = makeClient();
+      const err = await captureError(client.getUserMemberships({ userId: "u" }));
+      expect(err.code).toBe("UNKNOWN_ERROR");
+    });
+
+    it("maps the wire `page_size` to `per_page`", async () => {
+      mock2xx({ items: [], total: 0, page: 1, page_size: 20 }, 200);
+      const client = makeClient();
+      const result = await client.getUserMemberships({ userId: "u" });
+      expect(result.per_page).toBe(20);
     });
 
     it("throws when pagination keys are missing", async () => {

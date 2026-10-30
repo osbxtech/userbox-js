@@ -42,6 +42,16 @@ jobs:
         with:
           node-version-file: .nvmrc
 
+      # Both run before install: they need no dependency.
+      - name: Changeset rule (a react/src or node/src change needs a .changeset/*.md)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/check-changeset.mjs --base "$BASE_SHA"
+
+      - name: Contract check (vendored contract/tenant-openapi.json, no network)
+        run: node scripts/check-contract.mjs
+
       - name: Enable pnpm (corepack, version from package.json)
         run: corepack enable && pnpm --version
 

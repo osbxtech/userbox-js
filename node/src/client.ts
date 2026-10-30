@@ -3,6 +3,7 @@ import {
   isAccessCheckShape,
   isAccessPermissionsShape,
   isListEnvelope,
+  isMembershipListEnvelope,
   normaliseBaseUrl,
   request,
   type HttpMethod,
@@ -35,7 +36,7 @@ interface MembershipListWire {
   items: MembershipResponse[];
   total: number;
   page: number;
-  per_page: number;
+  page_size: number;
 }
 
 interface AuditLogListWire {
@@ -114,13 +115,13 @@ export class UserboxClient {
         page,
         per_page: perPage,
       },
-      validate: isListEnvelope as (b: unknown) => b is MembershipListWire,
+      validate: isMembershipListEnvelope as (b: unknown) => b is MembershipListWire,
     });
     return {
       data: wire.items,
       total: wire.total,
       page: wire.page,
-      per_page: wire.per_page,
+      per_page: wire.page_size,
     };
   }
 

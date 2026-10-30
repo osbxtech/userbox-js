@@ -169,6 +169,34 @@ function typecheck(dir, file, specifiers, resolution) {
   });
 }
 
+// Import every `exports` entry of the installed package (and `require` the
+// CommonJS ones; bundler-only entries are resolved, not imported), then
+// type-check a fixture as a bundler consumer and as a Node ESM consumer.
+// `dir` holds node_modules with the package, typescript and the type packages.
+// Shared with verify-published.mjs, which runs it on the registry install.
+export function checkEntries(pkg, dir, manifest) {
+  const subpaths = Object.keys(manifest.exports).filter((k) => k !== "./package.json");
+  const specifiers = subpaths.map((k) => manifest.name + k.slice(1));
+  for (const spec of specifiers) {
+    const subpath = `.${spec.slice(manifest.name.length)}`;
+    const load = BUNDLER_ONLY[pkg].includes(subpath)
+      ? `import.meta.resolve(${JSON.stringify(spec)});`
+      : `await import(${JSON.stringify(spec)});`;
+    run("node", ["--input-type=module", "-e", load], { cwd: dir });
+    const entry = manifest.exports[subpath];
+    if (entry && typeof entry === "object" && entry.require) {
+      run("node", ["-e", `require(${JSON.stringify(spec)});`], { cwd: dir });
+    }
+  }
+
+  // Type-check every entry as a bundler consumer would, and the entries
+  // that load in plain Node as a Node ESM consumer would.
+  const nodeSpecifiers = specifiers.filter((s) => !BUNDLER_ONLY[pkg].includes(`.${s.slice(manifest.name.length)}`));
+  const lib = SMOKE_TSC[pkg];
+  typecheck(dir, "bundler.ts", specifiers, [...lib, "--module", "esnext", "--moduleResolution", "bundler"]);
+  typecheck(dir, "nodenext.ts", nodeSpecifiers, [...lib, "--module", "nodenext", "--moduleResolution", "nodenext"]);
+}
+
 function smoke(pkg, tarball, manifest) {
   const dir = mkdtempSync(join(tmpdir(), `check-pack-${pkg}-`));
   try {
@@ -180,26 +208,7 @@ function smoke(pkg, tarball, manifest) {
     const stat = lstatSync(installed);
     if (stat.isSymbolicLink() || !stat.isDirectory()) fail(`${pkg}: ${installed} is not a real directory`);
 
-    const subpaths = Object.keys(manifest.exports).filter((k) => k !== "./package.json");
-    const specifiers = subpaths.map((k) => manifest.name + k.slice(1));
-    for (const spec of specifiers) {
-      const subpath = `.${spec.slice(manifest.name.length)}`;
-      const load = BUNDLER_ONLY[pkg].includes(subpath)
-        ? `import.meta.resolve(${JSON.stringify(spec)});`
-        : `await import(${JSON.stringify(spec)});`;
-      run("node", ["--input-type=module", "-e", load], { cwd: dir });
-      const entry = manifest.exports[subpath];
-      if (entry && typeof entry === "object" && entry.require) {
-        run("node", ["-e", `require(${JSON.stringify(spec)});`], { cwd: dir });
-      }
-    }
-
-    // Type-check every entry as a bundler consumer would, and the entries
-    // that load in plain Node as a Node ESM consumer would.
-    const nodeSpecifiers = specifiers.filter((s) => !BUNDLER_ONLY[pkg].includes(`.${s.slice(manifest.name.length)}`));
-    const lib = SMOKE_TSC[pkg];
-    typecheck(dir, "bundler.ts", specifiers, [...lib, "--module", "esnext", "--moduleResolution", "bundler"]);
-    typecheck(dir, "nodenext.ts", nodeSpecifiers, [...lib, "--module", "nodenext", "--moduleResolution", "nodenext"]);
+    checkEntries(pkg, dir, manifest);
   } catch (err) {
     if (err instanceof CheckError) throw err;
     const detail = [err.stdout, err.stderr].filter(Boolean).join("\n").trim();
