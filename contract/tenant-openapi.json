@@ -27,6 +27,36 @@
         "title": "AccessCheckRequest",
         "type": "object"
       },
+      "AccessCheckResponse": {
+        "properties": {
+          "allowed": {
+            "title": "Allowed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "allowed"
+        ],
+        "title": "AccessCheckResponse",
+        "type": "object"
+      },
+      "AccessCheckResponseDebug": {
+        "properties": {
+          "allowed": {
+            "title": "Allowed",
+            "type": "boolean"
+          },
+          "debug": {
+            "$ref": "#/components/schemas/DebugPayload"
+          }
+        },
+        "required": [
+          "allowed",
+          "debug"
+        ],
+        "title": "AccessCheckResponseDebug",
+        "type": "object"
+      },
       "AccessPermissionsResponse": {
         "properties": {
           "permissions": {
@@ -175,6 +205,39 @@
           "created_at"
         ],
         "title": "AuditLogRecord",
+        "type": "object"
+      },
+      "DebugPayload": {
+        "properties": {
+          "grant_type": {
+            "enum": [
+              "membership_assignment",
+              "group_assignment",
+              "role_attachment",
+              "role_assignment",
+              "default_deny"
+            ],
+            "title": "Grant Type",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          }
+        },
+        "required": [
+          "grant_type",
+          "source_id"
+        ],
+        "title": "DebugPayload",
         "type": "object"
       },
       "EnvironmentSummary": {
@@ -800,7 +863,7 @@
   "info": {
     "title": "Userbox tenant API",
     "version": "0.1.0",
-    "x-userbox-platform-commit": "268ef735e43494678f52f1279f6071f84f58d835"
+    "x-userbox-platform-commit": "da695c35437b11b1e5e52a3fcf3d18966d02844b"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -857,7 +920,17 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AccessCheckResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AccessCheckResponseDebug"
+                    }
+                  ],
+                  "title": "Response 200 Check Access V1 Access Check Post"
+                }
               }
             }
           },
