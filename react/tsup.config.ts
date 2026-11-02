@@ -12,7 +12,7 @@ export default defineConfig([
     splitting: false,
     treeshake: true,
     outDir: "dist",
-    external: ["react", "react-dom", "next", "next/server", "next/headers"],
+    external: ["react", "react-dom", "next", "next/server.js", "next/headers.js"],
   },
   {
     name: "nextjs-entry",
@@ -25,6 +25,6 @@ export default defineConfig([
     splitting: false,
     treeshake: true,
     outDir: "dist",
-    external: ["react", "react-dom", "next", "next/server", "next/headers"],
+    external: ["react", "react-dom", "next", "next/server.js", "next/headers.js"],
   },
 ]);

@@ -5,7 +5,9 @@
 //
 // A change under react/src/ or node/src/ needs at least one added or modified
 // .changeset/*.md (README.md excluded). An empty changeset (`pnpm changeset
-// --empty`) counts, for changes that release nothing.
+// --empty`) counts, for changes that release nothing. So does a changeset that
+// `pnpm changeset version` already consumed in the same pull request: in
+// pre-release mode, Changesets moves it to .changeset/pre/.
 //
 // Exit 0 when the rule holds; exit 1 naming the source files otherwise.
 // Runs in ci.yml on every pull request, forks included: it needs no secret.
@@ -16,7 +18,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE = /^(react|node)\/src\//;
-const CHANGESET = /^\.changeset\/(?!README\.md$)[^/]+\.md$/;
+const CHANGESET = /^\.changeset\/(pre\/)?(?!README\.md$)[^/]+\.md$/;
 
 class CheckError extends Error {}
 

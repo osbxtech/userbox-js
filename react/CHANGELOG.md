@@ -5,6 +5,16 @@ All notable changes to `@userbox/react` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-alpha.1] — 2026-11-02
+
+### Fixed
+- `@userbox/react/nextjs` now loads in plain Node ESM. It imports
+  `next/server.js` and `next/headers.js` instead of the extensionless
+  `next/server` and `next/headers`; `next` has no `exports` map, so the
+  extensionless imports failed with `ERR_MODULE_NOT_FOUND`, and TypeScript
+  reported TS2307 under `moduleResolution: nodenext` without `skipLibCheck`.
+  Next.js apps were not affected: the Next bundler resolves both forms.
+
 ## [1.0.0-alpha.0] — 2026-05-18
 
 Initial alpha. Public surface frozen for the V1 scope.

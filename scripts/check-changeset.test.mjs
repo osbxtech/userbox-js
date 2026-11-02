@@ -21,6 +21,16 @@ test("a node/src change with a changeset passes", () => {
   assert.equal(changesetProblem(files, files), null);
 });
 
+test("a changeset consumed by `changeset version` in pre-release mode counts", () => {
+  const files = ["react/src/nextjs/server.ts", ".changeset/pre/react-fix.md"];
+  assert.equal(changesetProblem(files, files), null);
+});
+
+test("other files under .changeset/pre/ do not count", () => {
+  const files = ["react/src/nextjs/server.ts", ".changeset/pre/README.md", ".changeset/pre/x/y.md"];
+  assert.ok(changesetProblem(files, files));
+});
+
 test("the changesets README does not count as a changeset", () => {
   const files = ["node/src/client.ts", ".changeset/README.md"];
   assert.ok(changesetProblem(files, files));
