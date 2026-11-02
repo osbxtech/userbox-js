@@ -121,6 +121,18 @@ test("secrets appear only in integration.yml", () => {
   }
 });
 
+test("secrets: inherit only where release.yml calls integration.yml", () => {
+  for (const [file, text] of Object.entries(WORKFLOWS)) {
+    const hits = code(text).match(/secrets: inherit/g) ?? [];
+    if (file !== "release.yml") {
+      assert.equal(hits.length, 0, file);
+      continue;
+    }
+    assert.equal(hits.length, 1, file);
+    assert.match(jobBlock(text, "integration"), /uses: \.\/\.github\/workflows\/integration\.yml[\s\S]*secrets: inherit/);
+  }
+});
+
 test("every action is pinned to a commit sha", () => {
   for (const line of occurrences(/uses:/)) {
     if (/uses: \.\//.test(line)) continue;
