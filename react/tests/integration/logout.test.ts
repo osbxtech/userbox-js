@@ -28,7 +28,9 @@ describe.skipIf(!integrationEnabled)("integration: logout invalidates refresh to
       },
       body: JSON.stringify({ refresh_token: login.refreshToken }),
     });
-    expect(retry.status).toBe(400);
+    // A refresh token the platform no longer holds is 401 INVALID_REFRESH_TOKEN
+    // (400 is only for logging out an already-revoked token).
+    expect(retry.status).toBe(401);
     const body = (await retry.json()) as { code?: string };
     expect(body.code).toBe("INVALID_REFRESH_TOKEN");
   });
