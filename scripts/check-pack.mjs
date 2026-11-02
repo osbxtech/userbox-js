@@ -143,15 +143,6 @@ const SMOKE_EXTRAS = {
   node: ["typescript", "@types/node"],
 };
 
-// Entries that only load inside a bundler. `@userbox/react/nextjs` imports
-// `next/server`, which Next.js resolves at build time but plain Node ESM does
-// not (no `exports` map in `next`). The smoke resolves these entries instead
-// of importing them, and type-checks them with bundler resolution only.
-const BUNDLER_ONLY = {
-  react: ["./nextjs"],
-  node: [],
-};
-
 function workspaceVersion(pkg, dep) {
   const path = join(ROOT, pkg, "node_modules", dep, "package.json");
   try {
@@ -169,32 +160,27 @@ function typecheck(dir, file, specifiers, resolution) {
   });
 }
 
-// Import every `exports` entry of the installed package (and `require` the
-// CommonJS ones; bundler-only entries are resolved, not imported), then
-// type-check a fixture as a bundler consumer and as a Node ESM consumer.
+// Import every `exports` entry of the installed package in plain Node ESM (and
+// `require` the CommonJS ones), then type-check a fixture importing every entry
+// as a bundler consumer and as a Node ESM consumer. No entry is exempt: an
+// extensionless import of a package without an `exports` map (`next/server`)
+// fails here as it would in a tenant's Node process (F-M4-1).
 // `dir` holds node_modules with the package, typescript and the type packages.
 // Shared with verify-published.mjs, which runs it on the registry install.
 export function checkEntries(pkg, dir, manifest) {
   const subpaths = Object.keys(manifest.exports).filter((k) => k !== "./package.json");
   const specifiers = subpaths.map((k) => manifest.name + k.slice(1));
   for (const spec of specifiers) {
-    const subpath = `.${spec.slice(manifest.name.length)}`;
-    const load = BUNDLER_ONLY[pkg].includes(subpath)
-      ? `import.meta.resolve(${JSON.stringify(spec)});`
-      : `await import(${JSON.stringify(spec)});`;
-    run("node", ["--input-type=module", "-e", load], { cwd: dir });
-    const entry = manifest.exports[subpath];
+    run("node", ["--input-type=module", "-e", `await import(${JSON.stringify(spec)});`], { cwd: dir });
+    const entry = manifest.exports[`.${spec.slice(manifest.name.length)}`];
     if (entry && typeof entry === "object" && entry.require) {
       run("node", ["-e", `require(${JSON.stringify(spec)});`], { cwd: dir });
     }
   }
 
-  // Type-check every entry as a bundler consumer would, and the entries
-  // that load in plain Node as a Node ESM consumer would.
-  const nodeSpecifiers = specifiers.filter((s) => !BUNDLER_ONLY[pkg].includes(`.${s.slice(manifest.name.length)}`));
   const lib = SMOKE_TSC[pkg];
   typecheck(dir, "bundler.ts", specifiers, [...lib, "--module", "esnext", "--moduleResolution", "bundler"]);
-  typecheck(dir, "nodenext.ts", nodeSpecifiers, [...lib, "--module", "nodenext", "--moduleResolution", "nodenext"]);
+  typecheck(dir, "nodenext.ts", specifiers, [...lib, "--module", "nodenext", "--moduleResolution", "nodenext"]);
 }
 
 function smoke(pkg, tarball, manifest) {

@@ -7,8 +7,9 @@
 // 2. In a new temp dir with no workspace: `npm init -y`, then
 //    `npm install <name>@<version> --save-exact` (+ react, react-dom, typescript
 //    and the type packages for react; typescript for node).
-// 3. Import every `exports` entry (ESM, plus `require` for CommonJS entries) and
-//    type-check a fixture importing the public types (check-pack.mjs checkEntries).
+// 3. Import every `exports` entry in plain Node ESM, `./nextjs` included (plus
+//    `require` for CommonJS entries), and type-check a fixture importing the
+//    public types (check-pack.mjs checkEntries).
 // 4. `npm audit signatures` passes and reports a verified attestation for
 //    <name>@<version> (provenance).
 // 5. `npm view <name> dist-tags.alpha` equals <version>.
@@ -32,7 +33,8 @@ const POLL_INTERVAL_MS = 15_000;
 const POLL_TIMEOUT_MS = 5 * 60_000;
 
 // What a tenant installs next to the package. Majors follow the peer ranges;
-// next and the type packages let the bundler-only `./nextjs` entry type-check.
+// next lets the `./nextjs` entry load in plain Node, and the type packages let
+// the fixture type-check.
 const CONSUMER_DEPS = {
   react: ["react@19", "react-dom@19", "next@15", "typescript@5", "@types/react@19", "@types/node@22"],
   node: ["typescript@5", "@types/node@22"],

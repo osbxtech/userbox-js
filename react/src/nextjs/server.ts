@@ -1,4 +1,4 @@
-import { headers } from "next/headers";
+import { headers } from "next/headers.js";
 import { decodeJwtClaims } from "../core/token";
 import type { Session } from "../core/refresh-engine";
 
