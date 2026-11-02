@@ -155,6 +155,11 @@ jobs:
     uses: ./.github/workflows/integration.yml
     with:
       package: ${{ inputs.package }}
+    # A called workflow sees only the secrets its caller passes, even for the
+    # environment its own job declares. The repository has no repository-level
+    # secret (FR-023), so this hands over exactly the `integration` environment
+    # secrets, which still admit main only.
+    secrets: inherit
 
   # Holds the OIDC identity, so it runs no project code: no checkout, no
   # install, no repository script. It publishes the exact tarball prepare
