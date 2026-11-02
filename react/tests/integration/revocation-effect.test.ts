@@ -33,7 +33,7 @@ describe.skipIf(!integrationEnabled || !ADMIN_TOKEN)(
         },
         body: JSON.stringify({ refresh_token: login.refreshToken }),
       });
-      expect(retry.status).toBe(400);
+      expect(retry.status).toBe(401);
     });
   },
 );
