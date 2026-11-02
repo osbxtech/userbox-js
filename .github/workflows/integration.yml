@@ -1,0 +1,77 @@
+name: integration
+
+# Runs the SDKs against the dedicated sdk-ci tenant on the Userbox test platform
+# (synthetic data only). Triggers: every push to main, and release.yml through
+# workflow_call. There is deliberately no pull_request trigger: the
+# `integration` environment holds this repository's only platform credential,
+# admits main only, and pull requests (forks included) never see it.
+#
+# The job itself declares the environment: a calling job with `uses:` cannot.
+# Secrets reach only the test step that needs them, through env:. No step
+# prints them, the environment or a request header; test failures report an
+# HTTP status and an error code only.
+on:
+  push:
+    branches: [main]
+  workflow_call:
+    inputs:
+      package:
+        description: "react or node"
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: integration
+    permissions:
+      contents: read
+    env:
+      # Empty on push: both packages run.
+      PACKAGE: ${{ inputs.package }}
+    steps:
+      - name: Validate the package input
+        run: |
+          case "$PACKAGE" in
+            ""|react|node) ;;
+            *) printf '::error::package must be react or node\n'; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Enable pnpm (corepack, version from package.json)
+        run: corepack enable && pnpm --version
+
+      - run: pnpm install --frozen-lockfile
+
+      # @userbox/react: signs the synthetic user in; needs no API key.
+      - name: Integration tests (react)
+        if: ${{ inputs.package == '' || inputs.package == 'react' }}
+        env:
+          USERBOX_INTEGRATION_REQUIRED: "1"
+          USERBOX_API_URL: ${{ vars.USERBOX_API_URL }}
+          USERBOX_TEST_TENANT_SLUG: ${{ vars.USERBOX_TEST_TENANT_SLUG }}
+          USERBOX_TEST_USER_EMAIL: ${{ vars.USERBOX_TEST_USER_EMAIL }}
+          USERBOX_TEST_USER_PASSWORD: ${{ secrets.USERBOX_SDK_CI_USER_PASSWORD }}
+        run: pnpm --filter @userbox/react test:integration
+
+      # @userbox/node: the sdk-ci API key, plus the user's JWT for audit logs.
+      - name: Integration tests (node)
+        if: ${{ inputs.package == '' || inputs.package == 'node' }}
+        env:
+          USERBOX_INTEGRATION_REQUIRED: "1"
+          USERBOX_API_URL: ${{ vars.USERBOX_API_URL }}
+          USERBOX_TEST_TENANT_SLUG: ${{ vars.USERBOX_TEST_TENANT_SLUG }}
+          USERBOX_TEST_USER_EMAIL: ${{ vars.USERBOX_TEST_USER_EMAIL }}
+          USERBOX_TEST_USER_PASSWORD: ${{ secrets.USERBOX_SDK_CI_USER_PASSWORD }}
+          USERBOX_TEST_API_KEY: ${{ secrets.USERBOX_SDK_CI_API_KEY }}
+        run: pnpm --filter @userbox/node test:integration

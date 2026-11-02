@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
-    exclude: ["tests/**/*.test-d.ts"],
+    exclude: ["tests/**/*.test-d.ts", "tests/integration/**"],
     globals: false,
     typecheck: {
       enabled: false,

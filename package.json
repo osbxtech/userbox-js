@@ -13,6 +13,13 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "check:pack": "node scripts/check-pack.mjs",
-    "test:scripts": "node --test \"scripts/*.test.mjs\""
+    "check:contract": "node scripts/check-contract.mjs",
+    "check:changeset": "node scripts/check-changeset.mjs",
+    "contract:sync": "node scripts/sync-contract.mjs",
+    "test:scripts": "node --test \"scripts/*.test.mjs\"",
+    "changeset": "changeset"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^3.0.3"
   }
 }

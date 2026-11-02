@@ -9,3 +9,4 @@
 - [ ] The SDK author contract still holds (`docs/sdk-author-contract.md`).
 - [ ] No new runtime dependency, or it is discussed in the linked issue.
 - [ ] `pnpm build && pnpm lint && pnpm typecheck && pnpm test && pnpm check:pack` pass locally.
+- [ ] `pnpm check:contract && pnpm test:scripts` pass locally.

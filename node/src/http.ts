@@ -219,3 +219,25 @@ export function isListEnvelope(
     typeof v.per_page === "number"
   );
 }
+
+/**
+ * Predicate: membership list envelope `{ items: unknown[], total, page, page_size }`.
+ * `GET /v1/memberships` names its page size `page_size`, unlike the audit-log list.
+ */
+export function isMembershipListEnvelope(
+  body: unknown,
+): body is { items: unknown[]; total: number; page: number; page_size: number } {
+  if (typeof body !== "object" || body === null) return false;
+  const v = body as {
+    items?: unknown;
+    total?: unknown;
+    page?: unknown;
+    page_size?: unknown;
+  };
+  return (
+    Array.isArray(v.items) &&
+    typeof v.total === "number" &&
+    typeof v.page === "number" &&
+    typeof v.page_size === "number"
+  );
+}

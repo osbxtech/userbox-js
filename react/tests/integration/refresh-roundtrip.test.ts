@@ -27,7 +27,8 @@ describe.skipIf(!integrationEnabled)("integration: refresh round-trip", () => {
     });
     const result = await engine.refresh();
     expect(result.kind).toBe("ok");
-    expect(store.getRefreshToken()).not.toBe(login.refreshToken);
+    // Compare as a boolean: a failed toBe() would print both tokens.
+    expect(store.getRefreshToken() !== login.refreshToken).toBe(true);
     engine.dispose();
   });
 });

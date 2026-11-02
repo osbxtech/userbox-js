@@ -45,7 +45,7 @@
     "package": "node",
     "operation": "GET /v1/memberships",
     "sends": ["user_id", "page", "per_page"],
-    "reads": ["items", "total", "page", "per_page"]
+    "reads": ["items", "total", "page", "page_size"]
   },
   {
     "package": "node",

@@ -1,0 +1,278 @@
+name: release
+
+# Releases one package at one version. Dispatched by a maintainer on main only;
+# `dry_run` defaults to true, so a forgotten checkbox never publishes.
+#
+#   prepare (checks, pack, sha256) → integration → publish (approval, OIDC)
+#                                                → verify (from the registry) → tag
+#
+# The npm trusted publisher is bound to this file name (release.yml) and the
+# npm-publish environment. Renaming either breaks publishing until the binding
+# is re-made on npmjs.com. No registry token exists anywhere.
+#
+# Inputs reach `run:` only through env: (never `${{ }}` inside a script), and
+# scripts/check-release.mjs validates the version before any other use.
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package to release
+        type: choice
+        options: [react, node]
+        required: true
+      version:
+        description: "Version, X.Y.Z-alpha.N (must match package.json and CHANGELOG.md)"
+        type: string
+        required: true
+      dry_run:
+        description: Dry run (check and pack, publish nothing)
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: release-${{ inputs.package }}
+  cancel-in-progress: false
+
+env:
+  # Exact toolchain. Node 24.22.0 bundles npm 11.19.1; trusted publishing needs npm >= 11.5.1.
+  NODE_VERSION: 24.22.0
+  NPM_VERSION: 11.19.1
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      sha256: ${{ steps.pack.outputs.sha256 }}
+      tarball: ${{ steps.pack.outputs.tarball }}
+    env:
+      PACKAGE: ${{ inputs.package }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Refuse any ref but main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            printf '::error::release runs on refs/heads/main only\n'
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false # no cache restored into a release run
+
+      - name: Pin npm
+        run: |
+          npm install -g "npm@${NPM_VERSION}"
+          test "$(npm --version)" = "$NPM_VERSION"
+
+      # First: validates the version, then manifest, changelog, tag, registry, dist-tag.
+      - name: Release checks
+        id: release
+        run: node scripts/check-release.mjs --package "$PACKAGE" --version "$VERSION"
+
+      - name: Contract check against the deployed description
+        env:
+          USERBOX_TENANT_OPENAPI_URL: ${{ vars.USERBOX_TENANT_OPENAPI_URL }}
+        run: |
+          if [ -z "$USERBOX_TENANT_OPENAPI_URL" ]; then
+            printf '::error::the repository variable USERBOX_TENANT_OPENAPI_URL is not set\n'
+            exit 1
+          fi
+          node scripts/check-contract.mjs --description "$USERBOX_TENANT_OPENAPI_URL"
+
+      - name: Enable pnpm (corepack, version from package.json)
+        run: corepack enable && pnpm --version
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter "./$PACKAGE" build
+      - run: pnpm --filter "./$PACKAGE" lint
+      - run: pnpm --filter "./$PACKAGE" typecheck
+      - run: pnpm --filter "./$PACKAGE" test
+
+      - name: Pack
+        id: pack
+        run: |
+          dest="$RUNNER_TEMP/pack"
+          mkdir -p "$dest"
+          pnpm --filter "./$PACKAGE" pack --pack-destination "$dest"
+          set -- "$dest"/*.tgz
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+            printf '::error::expected exactly one tarball\n'
+            exit 1
+          fi
+          tarball="$(basename "$1")"
+          sha256="$(sha256sum "$1" | cut -d' ' -f1)"
+          printf 'tarball=%s\nsha256=%s\n' "$tarball" "$sha256" >> "$GITHUB_OUTPUT"
+          printf 'TARBALL_PATH=%s\n' "$1" >> "$GITHUB_ENV"
+
+      - name: Check the tarball (allowlist, manifest, install-from-tarball smoke)
+        run: node scripts/check-pack.mjs --package "$PACKAGE" --tarball "$TARBALL_PATH"
+
+      - name: npm publish --dry-run
+        run: npm publish "$TARBALL_PATH" --dry-run --tag alpha --access public
+
+      - name: Summary
+        env:
+          SHA256: ${{ steps.pack.outputs.sha256 }}
+          DIST_TAG: ${{ steps.release.outputs.dist-tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          {
+            printf '## %s %s\n\n' "$PACKAGE" "$VERSION"
+            printf '| | |\n|---|---|\n'
+            printf '| version | `%s` |\n' "$VERSION"
+            printf '| dist-tag | `%s` |\n' "$DIST_TAG"
+            printf '| tarball | `%s` |\n' "$(basename "$TARBALL_PATH")"
+            printf '| sha256 | `%s` |\n' "$SHA256"
+            printf '| dry run | `%s` |\n\n' "$DRY_RUN"
+            printf '### Files\n\n```\n'
+            tar -tzf "$TARBALL_PATH"
+            printf '```\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tarball
+          path: ${{ env.TARBALL_PATH }}
+          if-no-files-found: error
+          retention-days: 7
+
+  integration:
+    needs: prepare
+    permissions:
+      contents: read
+    uses: ./.github/workflows/integration.yml
+    with:
+      package: ${{ inputs.package }}
+
+  # Holds the OIDC identity, so it runs no project code: no checkout, no
+  # install, no repository script. It publishes the exact tarball prepare
+  # checked, after matching it against prepare's sha256 job output.
+  publish:
+    needs: [prepare, integration]
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tarball
+          path: ${{ runner.temp }}/tarball
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false # no cache restored into a release run
+
+      - name: Match the tarball with prepare's sha256
+        env:
+          TARBALL: ${{ needs.prepare.outputs.tarball }}
+          EXPECTED_SHA256: ${{ needs.prepare.outputs.sha256 }}
+        run: |
+          case "$TARBALL" in
+            userbox-react-*.tgz|userbox-node-*.tgz) ;;
+            *) printf '::error::unexpected tarball name\n'; exit 1 ;;
+          esac
+          printf '%s  %s\n' "$EXPECTED_SHA256" "$RUNNER_TEMP/tarball/$TARBALL" | sha256sum -c -
+
+      - name: Check the bundled npm
+        run: test "$(npm --version)" = "$NPM_VERSION"
+
+      - name: Publish (trusted publishing; provenance is automatic)
+        env:
+          TARBALL: ${{ needs.prepare.outputs.tarball }}
+        run: npm publish "$RUNNER_TEMP/tarball/$TARBALL" --access public --tag alpha
+
+  verify:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      PACKAGE: ${{ inputs.package }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false # no cache restored into a release run
+
+      - name: Pin npm
+        run: |
+          npm install -g "npm@${NPM_VERSION}"
+          test "$(npm --version)" = "$NPM_VERSION"
+
+      - name: Install from the registry, import, type-check, check the attestation
+        run: node scripts/verify-published.mjs --package "$PACKAGE" --version "$VERSION"
+
+  # Runs only after verify passed. The release-tags ruleset blocks updating and
+  # deleting `*-v*` tags with no bypass, so a tag, once created, is final.
+  tag:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      PACKAGE: ${{ inputs.package }}
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      RELEASED_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Changelog section
+        run: |
+          awk '/^## /{ if (seen) exit; seen = 1; next } seen' "$PACKAGE/CHANGELOG.md" > "$RUNNER_TEMP/notes.md"
+          name="$(jq -r .name "$PACKAGE/package.json")"
+          printf '\n%s on npm: https://www.npmjs.com/package/%s/v/%s\n' "$name" "$name" "$VERSION" >> "$RUNNER_TEMP/notes.md"
+          printf 'PACKAGE_NAME=%s\n' "$name" >> "$GITHUB_ENV"
+
+      - name: Annotated tag on the released commit
+        run: |
+          tag="${PACKAGE}-v${VERSION}"
+          tag_object="$(gh api "repos/$REPO/git/tags" \
+            -f tag="$tag" -f message="$PACKAGE_NAME $VERSION" -f object="$RELEASED_SHA" -f type=commit --jq .sha)"
+          gh api "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$tag_object" > /dev/null
+
+      - name: GitHub pre-release
+        run: |
+          gh release create "${PACKAGE}-v${VERSION}" --repo "$REPO" --verify-tag --prerelease \
+            --title "$PACKAGE_NAME $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+
+      - name: Summary (and the `latest` command while latest is the placeholder)
+        run: |
+          latest="$(npm view "$PACKAGE_NAME" dist-tags.latest 2>/dev/null || true)"
+          {
+            printf '## Released %s@%s\n\n' "$PACKAGE_NAME" "$VERSION"
+            printf 'Tag `%s-v%s` on `%s`.\n\n' "$PACKAGE" "$VERSION" "$RELEASED_SHA"
+            case "$latest" in
+              ""|0.0.0-bootstrap.*)
+                printf '`latest` points to `%s`. A maintainer moves it (2FA):\n\n' "${latest:-nothing}"
+                printf '```\nnpm dist-tag add %s@%s latest\n```\n' "$PACKAGE_NAME" "$VERSION"
+                ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"

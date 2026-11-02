@@ -126,7 +126,7 @@ describe("UserboxClient.getUserMemberships()", () => {
       ],
       total: 1,
       page: 1,
-      per_page: 20,
+      page_size: 20,
     });
     const client = makeClient();
     const result = await client.getUserMemberships({ userId: "u-1" });
@@ -145,7 +145,7 @@ describe("UserboxClient.getUserMemberships()", () => {
   });
 
   it("uses caller-supplied page and perPage", async () => {
-    const fetchMock = mockJson({ items: [], total: 0, page: 3, per_page: 50 });
+    const fetchMock = mockJson({ items: [], total: 0, page: 3, page_size: 50 });
     const client = makeClient();
     await client.getUserMemberships({ userId: "u-1", page: 3, perPage: 50 });
     const parsed = new URL(String(fetchMock.mock.calls[0]![0]));
