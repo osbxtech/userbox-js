@@ -153,7 +153,11 @@ reference:
 - `usePermission(workspaceId, key)` — synchronous boolean derivation. **UI hints only.**
 - `useSignIn() / useSignUp()` — navigate to the hosted auth surface.
 - `useSignOut()` — clears in-memory state + calls `/v1/auth/logout`.
-- `<UserboxCallback>` — consumes credentials from the URL fragment.
+- `<UserboxCallback>` — consumes credentials from the URL fragment. With
+  `tokenStorage="cookie"`, `onSuccess` fires only after the tenant backend has
+  set the refresh cookie (the `init` request); if that request fails, `onError`
+  fires instead. Navigate from `onSuccess`. Before `1.0.0-alpha.3`, the app
+  could stay signed out after hosted sign-in until a reload.
 - `userboxMiddleware(config)` + `getUnverifiedSession()` from `@userbox/react/nextjs`
   (`getSession()` was renamed in `1.0.0-alpha.2`; it never verified the token).
 

@@ -35,7 +35,16 @@ export type RefreshTransient = {
   retryInMs: number;
 };
 
-export type RefreshResult = RefreshSuccess | RefreshPermanent | RefreshTransient;
+/** The refresh started before `primeSession()` adopted a newer session; its result was ignored. */
+export type RefreshSuperseded = {
+  kind: "superseded";
+};
+
+export type RefreshResult =
+  | RefreshSuccess
+  | RefreshPermanent
+  | RefreshTransient
+  | RefreshSuperseded;
 
 export type RefreshEngineOptions = {
   tenantSlug: string;
@@ -79,6 +88,13 @@ export class RefreshEngine {
   private sessionExpiredFired = false;
   private channel: BroadcastChannel | null = null;
   private currentSession: Session | null = null;
+  /**
+   * Bumped by `primeSession()`. A refresh that started under an older
+   * generation is stale: a session adopted meanwhile (e.g. from the hosted
+   * sign-in callback) is authoritative, so the stale result must not clear
+   * or replace it.
+   */
+  private generation = 0;
 
   constructor(options: RefreshEngineOptions) {
     this.options = options;
@@ -150,6 +166,7 @@ export class RefreshEngine {
    * refreshes are scheduled automatically.
    */
   primeSession(session: Session): void {
+    this.generation += 1;
     this.permanentlyFailed = false;
     this.sessionExpiredFired = false;
     this.failureCount = 0;
@@ -177,13 +194,14 @@ export class RefreshEngine {
       };
     }
     if (this.inFlight) return this.inFlight;
-    this.inFlight = this.performRefreshWithCoordination().finally(() => {
+    const generation = this.generation;
+    this.inFlight = this.performRefreshWithCoordination(generation).finally(() => {
       this.inFlight = null;
     });
     return this.inFlight;
   }
 
-  private async performRefreshWithCoordination(): Promise<RefreshResult> {
+  private async performRefreshWithCoordination(generation: number): Promise<RefreshResult> {
     if (this.channel) {
       // Best-effort cross-tab claim: announce intent and wait briefly for a
       // session broadcast from another tab. If one arrives first, adopt it
@@ -191,7 +209,7 @@ export class RefreshEngine {
       const winner = await this.claimRefreshWindow();
       if (winner) return winner;
     }
-    return this.performRefresh();
+    return this.performRefresh(generation);
   }
 
   private claimRefreshWindow(): Promise<RefreshResult | null> {
@@ -236,7 +254,7 @@ export class RefreshEngine {
     });
   }
 
-  private async performRefresh(): Promise<RefreshResult> {
+  private async performRefresh(generation: number): Promise<RefreshResult> {
     const body =
       this.options.tokenStorage === "memory"
         ? { refresh_token: this.options.sessionStore.getRefreshToken() ?? "" }
@@ -252,6 +270,13 @@ export class RefreshEngine {
       credentials: this.options.tokenStorage === "cookie" ? "include" : "same-origin",
       errorKind: "refresh",
     });
+
+    if (generation !== this.generation) {
+      // A session was primed while this request was in flight. Its result
+      // (success or failure) belongs to the old state: drop it without side
+      // effects and report it as superseded.
+      return { kind: "superseded" };
+    }
 
     if (!res.ok) {
       const error = res.error;
