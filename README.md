@@ -1,6 +1,6 @@
 # Userbox JavaScript SDKs
 
-[Userbox](https://docs.userbox.dev) is an identity and authorization platform:
+[Userbox](https://docs.test.userbox.app) is an identity and authorization platform:
 users, workspaces, memberships and workspace-scoped permissions, behind one API.
 This repository holds its official JavaScript SDKs.
 
@@ -15,7 +15,10 @@ This repository holds its official JavaScript SDKs.
 >     npm install @userbox/react@alpha
 >     npm install @userbox/node@alpha
 
-Documentation: https://docs.userbox.dev
+Documentation: https://docs.test.userbox.app
+
+`test` is the only live Userbox environment today. Point the SDKs at
+`https://api.test.userbox.app` (`baseUrl`); production URLs are not live yet.
 
 ## Working on the SDKs
 

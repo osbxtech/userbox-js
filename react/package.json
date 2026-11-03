@@ -1,6 +1,6 @@
 {
   "name": "@userbox/react",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "description": "Official TypeScript/React frontend SDK for the Userbox identity and authorization platform.",
   "type": "module",
   "sideEffects": false,
@@ -39,7 +39,7 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "next": "^14.2.0 || ^15.0.0",
+    "next": "^14.2.0 || ^15.0.0 || ^16.0.0",
     "react": "^18.2.0 || ^19.0.0"
   },
   "peerDependenciesMeta": {
@@ -55,7 +55,7 @@
     "@typescript-eslint/parser": "^8.20.0",
     "eslint": "^9.18.0",
     "jsdom": "^25.0.1",
-    "next": "^15.1.6",
+    "next": "^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tsup": "^8.3.5",
@@ -70,7 +70,7 @@
     "url": "https://github.com/osbxtech/userbox-js.git",
     "directory": "react"
   },
-  "homepage": "https://docs.userbox.dev",
+  "homepage": "https://docs.test.userbox.app",
   "bugs": {
     "url": "https://github.com/osbxtech/userbox-js/issues"
   },

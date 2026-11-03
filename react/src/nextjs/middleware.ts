@@ -41,6 +41,13 @@ export function userboxMiddleware(
   const sameSite = config.cookieSameSite ?? "lax";
 
   return async function middleware(req: NextRequest): Promise<NextResponse> {
+    // Never forward a client-supplied access-token header: getUnverifiedSession()
+    // trusts this header, so only a token this middleware just obtained may reach it.
+    const requestHeaders = new Headers(req.headers);
+    requestHeaders.delete(accessTokenHeader);
+    const forward = (): NextResponse =>
+      NextResponse.next({ request: { headers: requestHeaders } });
+
     const cookie = req.cookies.get(refreshCookieName);
     if (!cookie || !cookie.value) {
       if (!warnedNoCookie) {
@@ -51,7 +58,7 @@ export function userboxMiddleware(
             "If the app uses tokenStorage: 'memory', the middleware should not be installed.",
         );
       }
-      return NextResponse.next();
+      return forward();
     }
 
     const res = await request<RefreshHttpResponse>({
@@ -67,7 +74,7 @@ export function userboxMiddleware(
       const isPermanent =
         (err.kind === "refresh_failed" || err.kind === "auth_failed") &&
         PERMANENT_STATUSES.has(err.httpStatus);
-      const response = NextResponse.next();
+      const response = forward();
       if (isPermanent) {
         response.cookies.delete(refreshCookieName);
         config.onError?.(err, req);
@@ -87,7 +94,7 @@ export function userboxMiddleware(
         ? data.refresh_expires_in
         : expiresIn;
     if (!accessToken || !newRefresh || !expiresIn) {
-      const response = NextResponse.next();
+      const response = forward();
       config.onError?.(
         networkError("Refresh response missing fields"),
         req,
@@ -95,15 +102,9 @@ export function userboxMiddleware(
       return response;
     }
 
-    // Forward the access token via a request header. We mutate the incoming
-    // headers in a new NextResponse since req.headers is readable but tunnels
-    // must be set on the response's request rewrite.
-    const requestHeaders = new Headers(req.headers);
+    // Forward the fresh access token to Server Components via a request header.
     requestHeaders.set(accessTokenHeader, accessToken);
-
-    const response = NextResponse.next({
-      request: { headers: requestHeaders },
-    });
+    const response = forward();
 
     response.cookies.set(refreshCookieName, newRefresh, {
       httpOnly: true,

@@ -5,6 +5,33 @@ All notable changes to `@userbox/react` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-alpha.2] — 2026-11-03
+
+### Security
+- `userboxMiddleware` now deletes the incoming access-token header
+  (`x-userbox-access-token`, or `accessTokenHeader`) on every path before it
+  forwards the request: no refresh cookie, failed refresh, malformed refresh
+  response, and success (which then sets the refreshed token). Before, a request
+  without a refresh cookie passed a client-supplied header through to Server
+  Components unchanged.
+
+### Changed (breaking)
+- `getSession()` from `@userbox/react/nextjs` is renamed
+  `getUnverifiedSession()`. It decodes the forwarded token without verifying its
+  signature, and the old name made it look like an authorization source. It now
+  also returns `null` for an expired token, and takes an optional
+  `{ accessTokenHeader }` matching the middleware's option. Authorize on the
+  server by verifying the Bearer token against the JWKS.
+
+### Added
+- Next.js 16 support: `peerDependencies.next` accepts `^16.0.0`, so the package
+  installs in a fresh `create-next-app` app. The README shows the Next 16
+  `proxy.ts` convention next to `middleware.ts`.
+
+### Docs
+- Links and examples use the live `test` environment:
+  `https://docs.test.userbox.app` and `baseUrl: "https://api.test.userbox.app"`.
+
 ## [1.0.0-alpha.1] — 2026-11-02
 
 ### Fixed
