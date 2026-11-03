@@ -5,6 +5,23 @@ All notable changes to `@userbox/react` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-alpha.3] — 2026-11-03
+
+### Fixed
+- With `tokenStorage="cookie"`, the app sometimes stayed signed out after
+  hosted sign-in until a manual reload. On the callback page,
+  `UserboxProvider`'s mount-time refresh left before the tenant backend had set
+  the refresh cookie, came back 401, and cleared the session that
+  `<UserboxCallback>` had just adopted. Now:
+  - the provider skips its bootstrap refresh when a session was already
+    adopted, and ignores the result of a refresh that started before a session
+    was adopted (the refresh engine reports it as superseded, without
+    `onError` or `onSessionExpired`);
+  - `<UserboxCallback>` waits for the cookie `init` request before calling
+    `onSuccess`, so a navigation in `onSuccess` happens after the cookie
+    exists. If `init` fails, it calls `onError` and not `onSuccess` (before, it
+    called both).
+
 ## [1.0.0-alpha.2] — 2026-11-03
 
 ### Security

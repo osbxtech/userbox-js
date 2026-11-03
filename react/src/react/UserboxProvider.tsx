@@ -103,6 +103,9 @@ export const UserboxProvider: React.FC<UserboxProviderProps> = (props) => {
   const sessionStoreRef = useRef<SessionStore | null>(null);
   const engineRef = useRef<RefreshEngine | null>(null);
   const userMeFetchedRef = useRef<string | null>(null);
+  // Bumped on every adoptCallbackSession(): lets the mount refresh tell that
+  // its result is stale.
+  const adoptGenerationRef = useRef(0);
 
   if (!sessionStoreRef.current) {
     sessionStoreRef.current = createSessionStore(config.tokenStorage);
@@ -141,10 +144,25 @@ export const UserboxProvider: React.FC<UserboxProviderProps> = (props) => {
   useEffect(() => {
     const engine = engineRef.current!;
     let cancelled = false;
+    const existing = engine.getSession();
+    if (existing && !engine.isPermanentlyFailed()) {
+      // A child (UserboxCallback) adopted a session before this effect ran:
+      // child effects run first. Bootstrapping now would race the cookie
+      // `init` request and could clear that session. Re-prime instead, which
+      // re-arms the proactive refresh timer (a StrictMode remount disposes it).
+      engine.primeSession(existing);
+      setState((s) => ({ ...s, isLoaded: true }));
+      return () => {
+        cancelled = true;
+        engine.dispose();
+      };
+    }
+    const adoptedAtStart = adoptGenerationRef.current;
     void (async () => {
       const result = await engine.refresh();
       if (cancelled) return;
-      if (result.kind !== "ok") {
+      // Ignore a failure when a session was adopted after this refresh started.
+      if (result.kind !== "ok" && adoptGenerationRef.current === adoptedAtStart) {
         setState((s) => ({ ...s, session: null, isLoaded: true }));
       }
     })();
@@ -238,6 +256,7 @@ export const UserboxProvider: React.FC<UserboxProviderProps> = (props) => {
   const adoptCallbackSession = useCallback(
     (session: Session, rawRefreshToken: string | null) => {
       const engine = engineRef.current!;
+      adoptGenerationRef.current += 1;
       if (config.tokenStorage === "memory" && rawRefreshToken) {
         sessionStoreRef.current?.setRefreshToken(rawRefreshToken);
       }

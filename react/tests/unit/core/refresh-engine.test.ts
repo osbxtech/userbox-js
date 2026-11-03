@@ -110,4 +110,37 @@ describe("RefreshEngine", () => {
     expect(onSessionExpired).toHaveBeenCalledTimes(1);
     engine.dispose();
   });
+
+  it("ignores a refresh that fails after primeSession() adopted a newer session", async () => {
+    let release!: (r: Response) => void;
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      () => new Promise<Response>((r) => {
+        release = r;
+      }),
+    );
+    const onSessionExpired = vi.fn();
+    const onError = vi.fn();
+    const onSession = vi.fn();
+    const engine = new RefreshEngine(
+      makeBaseOptions({ onSession, onSessionExpired, onError, now: () => 1_000_000 }),
+    );
+
+    const pending = engine.refresh();
+    const adopted = {
+      accessToken: "at-callback",
+      accessTokenExpiresAt: 1_000_000 + 900_000,
+      refreshExpiresAt: 1_000_000 + 7 * 24 * 3600_000,
+      user: { id: "u1", tenantId: "t1", email: null, fullName: null },
+    };
+    engine.primeSession(adopted);
+    release(makeRefreshResponse(401, { code: "INVALID_REFRESH_TOKEN", error: "stale" }));
+
+    await expect(pending).resolves.toEqual({ kind: "superseded" });
+    expect(onSessionExpired).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(onSession).not.toHaveBeenCalled();
+    expect(engine.isPermanentlyFailed()).toBe(false);
+    expect(engine.getSession()).toBe(adopted);
+    engine.dispose();
+  });
 });

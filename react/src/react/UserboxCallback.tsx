@@ -116,25 +116,34 @@ export const UserboxCallback: React.FC<UserboxCallbackProps> = ({
       },
     };
 
-    // For cookie storage: hand the refresh token to the tenant backend to set
-    // the httpOnly cookie. Fire-and-forget; failure surfaces via onError.
-    if (ctx.config.tokenStorage === "cookie") {
-      void (async () => {
-        const res = await request<unknown>({
-          url: ctx.config.refreshUrl,
-          method: "POST",
-          tenantSlug: ctx.config.tenantSlug,
-          body: { action: "init", refresh_token: refreshToken },
-          credentials: "include",
-          errorKind: "auth",
-        });
-        if (!res.ok) onError?.(res.error);
-      })();
-    }
-
     ctx.adoptCallbackSession(session, refreshToken);
     stripFragment();
-    onSuccess?.({ user: session.user });
+
+    if (ctx.config.tokenStorage !== "cookie") {
+      onSuccess?.({ user: session.user });
+      return;
+    }
+
+    // Cookie storage: hand the refresh token to the tenant backend, which sets
+    // the httpOnly cookie. Wait for it before onSuccess, so that a navigation
+    // in onSuccess (and the refresh that follows it) happens after the cookie
+    // exists. On failure, report through onError instead.
+    const config = ctx.config;
+    void (async () => {
+      const res = await request<unknown>({
+        url: config.refreshUrl,
+        method: "POST",
+        tenantSlug: config.tenantSlug,
+        body: { action: "init", refresh_token: refreshToken },
+        credentials: "include",
+        errorKind: "auth",
+      });
+      if (!res.ok) {
+        onError?.(res.error);
+        return;
+      }
+      onSuccess?.({ user: session.user });
+    })();
   }, [ctx, onError, onSuccess]);
 
   return null;
