@@ -4,7 +4,9 @@
 >
 >     npm install @userbox/node@alpha
 >
-> Docs: https://docs.userbox.dev · Source: https://github.com/osbxtech/userbox-js/tree/main/node
+> Docs: https://docs.test.userbox.app · Source: https://github.com/osbxtech/userbox-js/tree/main/node
+>
+> `test` is the only live environment today: use `https://api.test.userbox.app` as `baseUrl`.
 
 TypeScript SDK for the Userbox identity & authorization platform. Six methods, one client, zero runtime dependencies, Node 18+, dual ESM + CJS.
 
@@ -47,6 +49,7 @@ import { UserboxClient } from "@userbox/node";
 const client = new UserboxClient({
   apiKey: process.env.USERBOX_API_KEY!,    // ub_live_…
   tenantId: process.env.USERBOX_TENANT_ID!,
+  baseUrl: "https://api.test.userbox.app",
 });
 
 const allowed = await client.can({
@@ -87,7 +90,7 @@ const client = new UserboxClient({
 });
 ```
 
-Trailing slashes on `baseUrl` are tolerated. Omit `baseUrl` to target the Userbox cloud at `https://api.userbox.app`.
+Trailing slashes on `baseUrl` are tolerated. The default `baseUrl` is the future production API, `https://api.userbox.app`, which is not live yet: set `baseUrl: "https://api.test.userbox.app"` for now.
 
 ---
 

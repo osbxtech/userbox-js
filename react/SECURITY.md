@@ -55,6 +55,16 @@ A 5xx or network failure from the refresh endpoint does NOT clear the
 refresh cookie. Only HTTP 400/401/403 (genuine credential rejection) clears
 the cookie. This prevents a Userbox-side outage from mass-logging-out users.
 
+## Forwarded access-token header (Next.js middleware)
+
+The middleware deletes the incoming access-token header
+(`x-userbox-access-token`, or `accessTokenHeader`) on every path before it
+forwards the request, and sets it again only after a successful refresh. A
+client can therefore not inject a token into Server Components on matched
+routes. `getUnverifiedSession()` decodes that token without verifying it: it
+is for rendering UI, never for authorization. Authorization verifies the
+Bearer token against the JWKS on the server.
+
 ## Reporting a vulnerability
 
 See the repository [security policy](../SECURITY.md). Report privately through
