@@ -6,6 +6,8 @@ export class CliError extends Error {
     readonly code: string,
     message: string,
     readonly hint?: string,
+    /** Extra top-level fields for the --json error document (e.g. `signup_url`). */
+    readonly data?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -49,7 +51,7 @@ export function printError(err: unknown, json: boolean): void {
       : new CliError("UNEXPECTED", err instanceof Error ? err.message : String(err));
   if (json) {
     process.stdout.write(
-      `${JSON.stringify({ ok: false, error: { code: e.code, message: e.message, hint: e.hint ?? null } }, null, 2)}\n`,
+      `${JSON.stringify({ ok: false, ...e.data, error: { code: e.code, message: e.message, hint: e.hint ?? null } }, null, 2)}\n`,
     );
   } else {
     process.stderr.write(`error [${e.code}]: ${e.message}\n`);

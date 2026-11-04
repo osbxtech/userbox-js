@@ -24,6 +24,10 @@ Secrets never pass through the model:
 - `login` refuses to run without an interactive terminal. If a command fails
   with `NOT_LOGGED_IN`, `SESSION_EXPIRED` or `NEEDS_HUMAN`, ask the human to
   run `npx @userbox/cli login` in their own terminal.
+- `login` fails with `INVALID_CREDENTIALS` for an unknown email, a wrong
+  password or an unknown tenant slug alike. The error carries `signup_url`
+  (also at the top level of the `--json` document): a founder with no account
+  creates one there, in a browser. The CLI never creates accounts.
 - `init` writes the API key straight to `.env.local` and never prints it.
 - `apply` without `--yes` only prints the plan when there is no terminal: show
   it to the human, then run `apply --yes`. A plan that removes permissions from
