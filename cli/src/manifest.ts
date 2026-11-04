@@ -118,3 +118,8 @@ export function planIsEmpty(plan: Plan): boolean {
     plan.revoke.length === 0
   );
 }
+
+/** True when the plan takes a permission away from an existing role. */
+export function planRevokes(plan: Plan): boolean {
+  return plan.revoke.length > 0;
+}

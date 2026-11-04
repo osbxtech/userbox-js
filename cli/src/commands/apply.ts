@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { Session } from "../api.js";
 import type { Flags } from "../bin.js";
-import { type Manifest, type Plan, parseManifest, planApply, planIsEmpty } from "../manifest.js";
+import { type Manifest, type Plan, parseManifest, planApply, planIsEmpty, planRevokes } from "../manifest.js";
 import { CliError, type Output } from "../output.js";
 import { confirm } from "../prompt.js";
 import {
@@ -23,6 +23,32 @@ import {
 // Permissions live in the environment; roles live in each workspace. `apply`
 // creates the permissions once and syncs the roles into every active
 // workspace of the default environment.
+
+type Sync = Awaited<ReturnType<typeof syncManifest>>;
+
+function isInteractive(flags: Flags): boolean {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY) && !flags.json;
+}
+
+/**
+ * A plan that removes permissions from an existing role can lock real users
+ * out, and coding agents skip the plan review (agent experiment, batch 4).
+ * Such a plan always needs a human answer at a terminal: `--yes` does not
+ * skip it, and without a terminal the command stops with NEEDS_HUMAN.
+ */
+export async function confirmRevokes(sync: Sync, flags: Flags, command: string): Promise<boolean> {
+  if (!sync.plans.some((p) => planRevokes(p.plan))) return true;
+  const lines = describe(sync).filter((l) => l.startsWith("  - "));
+  if (!isInteractive(flags)) {
+    throw new CliError(
+      "NEEDS_HUMAN",
+      `the plan removes permissions from existing roles:\n${lines.join("\n")}`,
+      `Ask the human to review it and run \`npx @userbox/cli ${command}\` in their own terminal.`,
+    );
+  }
+  process.stdout.write(`This removes permissions from existing roles:\n${lines.join("\n")}\n`);
+  return confirm("Remove them?");
+}
 
 export function loadManifest(root: string): Manifest {
   const path = join(root, "userbox.yaml");
@@ -98,7 +124,7 @@ export async function executeSync(
   for (const wp of sync.plans) await executeRoles(s, env, wp, sync.permissionIds);
 }
 
-function describe(sync: Awaited<ReturnType<typeof syncManifest>>): string[] {
+function describe(sync: Sync): string[] {
   const lines: string[] = [];
   for (const p of sync.createdPermissions) lines.push(`  + permission ${p}`);
   for (const { workspace, plan } of sync.plans) {
@@ -133,8 +159,7 @@ export async function apply(flags: Flags, out: Output): Promise<void> {
     return;
   }
   if (!flags.yes) {
-    const interactive = process.stdin.isTTY && process.stdout.isTTY && !flags.json;
-    if (!interactive) {
+    if (!isInteractive(flags)) {
       out.done({ ...summary, applied: false, hint: "Re-run with --yes to apply." }, [
         "Plan:",
         ...changes,
@@ -147,6 +172,9 @@ export async function apply(flags: Flags, out: Output): Promise<void> {
       out.done({ ...summary, applied: false }, ["Nothing applied."]);
       return;
     }
+  } else if (!(await confirmRevokes(sync, flags, "apply"))) {
+    out.done({ ...summary, applied: false }, ["Nothing applied."]);
+    return;
   }
   await executeSync(session, env, sync);
   out.done({ ...summary, applied: true }, ["Applied:", ...changes]);

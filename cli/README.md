@@ -26,7 +26,9 @@ Secrets never pass through the model:
   run `npx @userbox/cli login` in their own terminal.
 - `init` writes the API key straight to `.env.local` and never prints it.
 - `apply` without `--yes` only prints the plan when there is no terminal: show
-  it to the human, then run `apply --yes`.
+  it to the human, then run `apply --yes`. A plan that removes permissions from
+  an existing role fails with `NEEDS_HUMAN` even with `--yes`: the human runs
+  `npx @userbox/cli apply` in their own terminal.
 
 ## Commands
 
@@ -35,7 +37,7 @@ Secrets never pass through the model:
 | `login` | Logs in as a tenant admin (a user with console access). Stores the session in `~/.config/userbox/credentials.json`, mode 600. `--api-url` picks another API. |
 | `logout` / `whoami` | Forget / show the login. |
 | `init` | Needs Next.js with `app/` or `src/app/`. Adds the `--origin` host (default `http://localhost:3000`) to the allowed redirect domains, creates an API key with `access:check`, `memberships:read`, `workspaces:read` unless `.env.local` already has one, merges the five variables into `.env.local` without touching existing values (`--force` replaces them), makes sure `.env.local` is git-ignored, installs `@userbox/react@alpha` and `@userbox/node@alpha` (`--skip-install` skips it), and writes `providers.tsx`, `auth/callback/page.tsx` and `api/auth/refresh/route.ts` if they do not exist. It wraps `{children}` in the root layout with `<Providers>` when that edit is unambiguous. |
-| `apply` | Reads `userbox.yaml`, creates missing permissions, and makes every declared role in every active workspace hold exactly its listed permissions. Permissions and roles that are not in the file are reported, never deleted. |
+| `apply` | Reads `userbox.yaml`, creates missing permissions, and makes every declared role in every active workspace hold exactly its listed permissions. Permissions and roles that are not in the file are reported, never deleted. Removing a permission from an existing role needs a human at a terminal, even with `--yes`. |
 | `dev seed` | Creates (or reuses) the workspace `dev`, syncs `userbox.yaml` into it and gives you the `admin` role. `--invite email[:role]` invites more users by email (role defaults to `member`). Warns when the default environment is a production environment. |
 | `doctor` | Checks the project, SDK versions, auth files, `.env.local`, secrets in `NEXT_PUBLIC_*`, `.gitignore`, the API and JWKS, the API key's tenant and `access:check` scope, and, when logged in, the redirect domain and sign-up mode. Exits 1 when a check fails. |
 

@@ -13,7 +13,7 @@ import {
   listRoles,
   listWorkspaces,
 } from "../userbox.js";
-import { executeSync, loadManifest, syncManifest } from "./apply.js";
+import { confirmRevokes, executeSync, loadManifest, syncManifest } from "./apply.js";
 
 const SLUG = "dev";
 
@@ -40,8 +40,12 @@ export async function devSeed(flags: Flags, out: Output): Promise<void> {
 
   if (existsSync(join(process.cwd(), "userbox.yaml"))) {
     const sync = await syncManifest(session, env, loadManifest(process.cwd()), [ws]);
-    await executeSync(session, env, sync);
-    out.step("Synced userbox.yaml roles into the workspace");
+    if (await confirmRevokes(sync, flags, "dev seed")) {
+      await executeSync(session, env, sync);
+      out.step("Synced userbox.yaml roles into the workspace");
+    } else {
+      out.warn("Skipped the userbox.yaml sync: nothing was removed from the roles.");
+    }
   } else {
     out.warn("No userbox.yaml: the workspace has no roles yet. Add one and run `userbox apply`.");
   }
