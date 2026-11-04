@@ -21,8 +21,9 @@ expectType<boolean>(await client.can({ userId: "x", workspaceId: "y", permission
 
 // --- Constructor compile-time checks ---
 
-expectError(new UserboxClient({ apiKey: "x" }));
-expectError(new UserboxClient({ tenantId: "t" }));
+// Every field is optional: missing ones come from the environment at runtime.
+expectType<UserboxClient>(new UserboxClient());
+expectError(new UserboxClient({ apiKey: 42 }));
 
 // --- UserboxError is a proper Error subclass ---
 expectType<string>((null as unknown as UserboxError).code);

@@ -1,4 +1,5 @@
 import { UserboxError } from "./errors";
+import { isFrameworkControlFlow } from "./server/report";
 
 export const DEFAULT_BASE_URL = "https://api.userbox.app";
 
@@ -106,6 +107,8 @@ export async function request<T>(args: RequestArgs<T>): Promise<T> {
       body: hasBody ? JSON.stringify(args.body) : undefined,
     });
   } catch (err) {
+    // A Next.js prerender bail-out thrown by its patched fetch is not a network error.
+    if (isFrameworkControlFlow(err)) throw err;
     const original = err instanceof Error ? err.message : "Network request failed";
     throw new UserboxError({
       status: 0,

@@ -5,6 +5,22 @@ All notable changes to `@userbox/react` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-alpha.4] — 2026-11-04
+
+### Added
+- `createRefreshHandler(config?)` in `@userbox/react/nextjs`: the cookie-mode
+  refresh route as an SDK export. `app/api/auth/refresh/route.ts` becomes
+  `export const { POST } = createRefreshHandler();` instead of ~90 copied
+  lines. Same behaviour as the snippet it replaces in the docs: JSON-only and
+  `Origin` checks before anything else, `init` / refresh / `logout`, an
+  `HttpOnly; SameSite=Strict; Path=/api/auth` cookie (`Secure` on https), the
+  rotated refresh token stored on every refresh and never returned, and the
+  cookie cleared when Userbox rejects it. Defaults come from
+  `NEXT_PUBLIC_USERBOX_API_URL`, `NEXT_PUBLIC_USERBOX_TENANT_SLUG` and
+  `APP_ORIGIN`; missing configuration answers 500 `CONFIG_ERROR` at request
+  time. Responses carry `Cache-Control: no-store`, and a refresh also returns
+  `refresh_expires_in` when Userbox sends it.
+
 ## [1.0.0-alpha.3] — 2026-11-03
 
 ### Fixed

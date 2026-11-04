@@ -4,6 +4,11 @@ export {
   type MiddlewareConfig,
 } from "./nextjs/middleware";
 export {
+  createRefreshHandler,
+  type RefreshHandlerConfig,
+  type RefreshRouteHandlers,
+} from "./nextjs/refresh-handler";
+export {
   getUnverifiedSession,
   type UnverifiedSessionOptions,
   type ServerSession,
