@@ -1,0 +1,50 @@
+{
+  "name": "@userbox/cli",
+  "version": "0.1.0-alpha.0",
+  "description": "Userbox command-line tool: log in, set up a Next.js app, sync permissions and roles, seed dev users.",
+  "type": "module",
+  "bin": {
+    "userbox": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/parser": "^8.20.0",
+    "eslint": "^9.18.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/osbxtech/userbox-js.git",
+    "directory": "cli"
+  },
+  "homepage": "https://docs.test.userbox.app",
+  "bugs": {
+    "url": "https://github.com/osbxtech/userbox-js/issues"
+  },
+  "author": "OsbxTech <opensource@osbxtech.nl>",
+  "license": "Apache-2.0"
+}

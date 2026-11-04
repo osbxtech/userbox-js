@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Verifies a version after it was published, as a tenant would install it.
 //
-//   node scripts/verify-published.mjs --package <react|node> --version <X.Y.Z-alpha.N>
+//   node scripts/verify-published.mjs --package <react|node|cli> --version <X.Y.Z-alpha.N>
 //
 // 1. Poll `npm view <name>@<version> version` until the registry serves it (5 min max).
 // 2. In a new temp dir with no workspace: `npm init -y`, then
@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import { checkEntries } from "./check-pack.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const PACKAGES = ["react", "node"];
+const PACKAGES = ["react", "node", "cli"];
 const VERSION_RE = /^\d+\.\d+\.\d+-alpha\.\d+$/;
 const POLL_INTERVAL_MS = 15_000;
 const POLL_TIMEOUT_MS = 5 * 60_000;
@@ -38,6 +38,7 @@ const POLL_TIMEOUT_MS = 5 * 60_000;
 const CONSUMER_DEPS = {
   react: ["react@19", "react-dom@19", "next@15", "typescript@5", "@types/react@19", "@types/node@22"],
   node: ["typescript@5", "@types/node@22"],
+  cli: [],
 };
 
 class VerifyError extends Error {}
@@ -54,7 +55,7 @@ function parseArgs(argv) {
     else fail("arguments", `unknown argument ${JSON.stringify(arg)}`);
   }
   if (!VERSION_RE.test(args.version ?? "")) fail("arguments", `version must be X.Y.Z-alpha.N, found ${JSON.stringify(args.version)}`);
-  if (!PACKAGES.includes(args.package)) fail("arguments", `package must be react or node, found ${JSON.stringify(args.package)}`);
+  if (!PACKAGES.includes(args.package)) fail("arguments", `package must be react, node or cli, found ${JSON.stringify(args.package)}`);
   return args;
 }
 

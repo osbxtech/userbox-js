@@ -17,7 +17,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const SOURCE = /^(react|node)\/src\//;
+const SOURCE = /^(react|node|cli)\/src\//;
 const CHANGESET = /^\.changeset\/(pre\/)?(?!README\.md$)[^/]+\.md$/;
 
 class CheckError extends Error {}

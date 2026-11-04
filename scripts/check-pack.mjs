@@ -24,7 +24,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const PACKAGES = ["react", "node"];
+const PACKAGES = ["react", "node", "cli"];
 
 class CheckError extends Error {}
 
@@ -135,12 +135,14 @@ function readTarball(tarball) {
 const SMOKE_TSC = {
   react: ["--lib", "es2022,dom,dom.iterable", "--skipLibCheck"],
   node: ["--lib", "es2022"],
+  cli: [],
 };
 
 // Peers and type packages the smoke install needs, at the versions the workspace uses.
 const SMOKE_EXTRAS = {
   react: ["react", "react-dom", "next", "typescript", "@types/react", "@types/node"],
   node: ["typescript", "@types/node"],
+  cli: [],
 };
 
 function workspaceVersion(pkg, dep) {
@@ -168,6 +170,14 @@ function typecheck(dir, file, specifiers, resolution) {
 // `dir` holds node_modules with the package, typescript and the type packages.
 // Shared with verify-published.mjs, which runs it on the registry install.
 export function checkEntries(pkg, dir, manifest) {
+  // A CLI has no import entries: run each binary instead.
+  if (manifest.bin && !manifest.exports) {
+    for (const bin of Object.keys(manifest.bin)) {
+      const out = run(join(dir, "node_modules", ".bin", bin), ["--version"], { cwd: dir }).toString().trim();
+      if (out !== manifest.version) fail(`${pkg}: \`${bin} --version\` printed ${JSON.stringify(out)}, expected ${manifest.version}`);
+    }
+    return;
+  }
   const subpaths = Object.keys(manifest.exports).filter((k) => k !== "./package.json");
   const specifiers = subpaths.map((k) => manifest.name + k.slice(1));
   for (const spec of specifiers) {

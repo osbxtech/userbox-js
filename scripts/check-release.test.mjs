@@ -94,9 +94,9 @@ test("check 1: shell metacharacters are refused before any other use", () => {
 });
 
 test("an unknown package is refused", () => {
-  const res = check({ pkg: "cli" });
+  const res = check({ pkg: "python" });
   assert.equal(res.status, 1);
-  assert.match(res.stderr, /package: expected react or node, found "cli"/);
+  assert.match(res.stderr, /package: expected react or node or cli, found "python"/);
 });
 
 test("check 2: package.json version mismatch names both values", () => {
