@@ -10,6 +10,7 @@ import {
   type QueryValue,
 } from "./http";
 import type { UserboxClientConfig } from "./types/client-config";
+import { ENV, fromEnv, requireSetting } from "./server/env";
 import type { CanArgs, GetUserPermissionsArgs } from "./types/access";
 import type { UserResponse } from "./types/user";
 import type { WorkspaceResponse } from "./types/workspace";
@@ -51,10 +52,16 @@ export class UserboxClient {
   private readonly tenantId: string;
   private readonly baseUrl: string;
 
-  constructor(config: UserboxClientConfig) {
-    this.apiKey = config.apiKey;
-    this.tenantId = config.tenantId;
-    this.baseUrl = normaliseBaseUrl(config.baseUrl ?? DEFAULT_BASE_URL);
+  /**
+   * Every field falls back to the environment: `apiKey` to `USERBOX_API_KEY`,
+   * `tenantId` to `USERBOX_TENANT_ID`, `baseUrl` to `USERBOX_API_URL` then
+   * `NEXT_PUBLIC_USERBOX_API_URL`. Throws `UserboxError` `CONFIG_ERROR` when
+   * the API key or tenant id is missing from both.
+   */
+  constructor(config: Partial<UserboxClientConfig> = {}) {
+    this.apiKey = requireSetting(config.apiKey, ENV.apiKey, "Userbox API key");
+    this.tenantId = requireSetting(config.tenantId, ENV.tenantId, "Userbox tenant id");
+    this.baseUrl = normaliseBaseUrl(config.baseUrl ?? fromEnv(ENV.apiUrl) ?? DEFAULT_BASE_URL);
   }
 
   protected _request<T>(args: {

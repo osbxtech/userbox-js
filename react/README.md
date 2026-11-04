@@ -81,7 +81,52 @@ trades survival across reloads for zero-backend deploys.
 
 ## Quick start (Next.js App Router)
 
-Supports Next.js 14, 15 and 16. Next 16 calls the middleware file `proxy.ts`
+Supports Next.js 14, 15 and 16.
+
+### The refresh route (cookie mode)
+
+With `tokenStorage="cookie"`, the provider and `<UserboxCallback>` call your
+app's refresh route (`refreshUrl`, default `/api/auth/refresh`). The SDK ships
+it:
+
+```ts
+// app/api/auth/refresh/route.ts
+import { createRefreshHandler } from "@userbox/react/nextjs";
+
+export const { POST } = createRefreshHandler();
+```
+
+It reads `NEXT_PUBLIC_USERBOX_API_URL`, `NEXT_PUBLIC_USERBOX_TENANT_SLUG` and
+`APP_ORIGIN` (your app's origin, e.g. `http://localhost:3000`), or the
+`apiUrl`, `tenantSlug` and `appOrigin` options. A missing value answers
+500 `CONFIG_ERROR` at request time (and logs which one), so `next build` does
+not need them.
+
+What it does:
+
+- **CSRF guards first**: a request that is not `Content-Type: application/json`
+  gets 415; a request whose `Origin` header is present and is not `appOrigin`
+  gets 403. Nothing else runs.
+- `{ action: "init", refresh_token }` (from `<UserboxCallback>`): stores the
+  refresh token in the `ub_refresh` cookie: `HttpOnly; SameSite=Strict;
+  Path=/api/auth; Max-Age=604800`, plus `Secure` when `appOrigin` is `https:`.
+- `{}`: exchanges the cookie at `POST /v1/auth/refresh`, stores the rotated
+  refresh token (they are single-use) and returns only
+  `{ access_token, expires_in }`. No cookie → 401 `NO_REFRESH_COOKIE`. A token
+  Userbox rejects clears the cookie (401 `REFRESH_REJECTED`); a network or
+  5xx error keeps it (502 `UPSTREAM_UNAVAILABLE`).
+- `{ action: "logout" }`: revokes the refresh token upstream with the caller's
+  Bearer token (best effort) and clears the cookie.
+
+The refresh token never reaches the browser and is never logged. Options:
+`cookieName`, `cookiePath` (must contain the route) and `cookieMaxAge`.
+
+Authorize API routes with [`@userbox/node`](https://www.npmjs.com/package/@userbox/node)
+`verifyRequest()` and `can()`.
+
+### Server Components: `userboxMiddleware` (optional)
+
+Next 16 calls the middleware file `proxy.ts`
 (export `proxy`); Next 14 and 15 call it `middleware.ts` (export `middleware`).
 `userboxMiddleware()` works unchanged under both, on the Edge and Node runtimes.
 
@@ -133,10 +178,9 @@ request's refresh succeeded.
 of the token the middleware forwarded. Use it to render UI on routes the
 middleware matches. On a route outside the `matcher`, the header comes straight
 from the client. **Never authorize with it.** Authorization happens on your
-server: verify the `Authorization: Bearer` token against the Userbox JWKS
-(`https://api.test.userbox.app/.well-known/jwks.json`, `RS256` only), check
-that its `tid` is your tenant, then check permissions with
-[`@userbox/node`](https://www.npmjs.com/package/@userbox/node) `can()`.
+server with [`@userbox/node`](https://www.npmjs.com/package/@userbox/node):
+`verifyRequest(req)` verifies the `Authorization: Bearer` token (RS256 against
+the Userbox JWKS, tenant bound by `tid`) and `can()` checks the permission.
 
 ⚠️ **`ServerSession` carries the bearer `accessToken`.** Do NOT pass the
 returned `session` as a prop to a Client Component — Next.js will serialise
@@ -158,6 +202,8 @@ reference:
   set the refresh cookie (the `init` request); if that request fails, `onError`
   fires instead. Navigate from `onSuccess`. Before `1.0.0-alpha.3`, the app
   could stay signed out after hosted sign-in until a reload.
+- `createRefreshHandler(config?)` from `@userbox/react/nextjs` — the cookie-mode
+  refresh route: `export const { POST } = createRefreshHandler();`.
 - `userboxMiddleware(config)` + `getUnverifiedSession()` from `@userbox/react/nextjs`
   (`getSession()` was renamed in `1.0.0-alpha.2`; it never verified the token).
 

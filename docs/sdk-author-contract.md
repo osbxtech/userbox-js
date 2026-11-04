@@ -8,7 +8,7 @@ integrate it. A change to an SDK that breaks a rule below is a bug.
 
 | Capability | Notes |
 |---|---|
-| JWT verification (RS256 only) | The algorithm is fixed in code, never read from the token header. Use the language's best-maintained JWT library. |
+| JWT verification (RS256 only) | The algorithm is fixed in code, never read from the token header. Use the language's best-maintained JWT library, or the platform's standard crypto API where it verifies RS256 directly (JavaScript: Web Crypto, so `@userbox/node` stays dependency-free and dual ESM/CJS). |
 | Automatic token refresh | Refresh proactively at 80% of the access-token TTL. Refresh is single-flight: concurrent requests coalesce into one outbound call. |
 | Cookie strategy support | Server framework integrations register the `/api/auth/refresh` proxy route. Browser code never sees the refresh token in cookie mode. |
 | Memory strategy support | Access and refresh tokens are held in process memory. The SDK calls `POST /v1/auth/refresh` directly. |

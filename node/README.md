@@ -8,7 +8,7 @@
 >
 > `test` is the only live environment today: use `https://api.test.userbox.app` as `baseUrl`.
 
-TypeScript SDK for the Userbox identity & authorization platform. Six methods, one client, zero runtime dependencies, Node 18+, dual ESM + CJS.
+TypeScript SDK for the Userbox identity & authorization platform. Six methods, one client, two server helpers (`verifyRequest()` and a deny-on-error `can()`), zero runtime dependencies, Node 18+ (Node 20+ for `verifyRequest()`), dual ESM + CJS.
 
 If you can get from `npm install` to a typed `boolean` returned by `client.can(...)` in under fifteen minutes you have used the SDK correctly.
 
@@ -22,13 +22,13 @@ npm install @userbox/node@alpha
 # or:  yarn add @userbox/node@alpha
 ```
 
-Zero runtime dependencies. The SDK uses Node-global `fetch`, `URL`, and `Headers` — nothing else is pulled in.
+Zero runtime dependencies. The SDK uses the global `fetch`, `URL`, `Headers` and, for token verification, Web Crypto (`crypto.subtle`) — nothing else is pulled in. You do not need `jose`.
 
 ---
 
 ## Prerequisites
 
-- Node 18+
+- Node 18+ (Node 20+ for `verifyRequest()`, which needs the global Web Crypto API)
 - A Userbox **tenant ID** (UUID) — visible in the console under *Tenant settings*
 - A Userbox **API key** with the scopes you need:
   - `users:read` for `getUser(...)`
@@ -62,6 +62,82 @@ console.log(allowed); // true | false
 ```
 
 That is the entire integration. No `fetch` plumbing, no header construction, no error parsing.
+
+---
+
+## Server helpers: authenticate and authorize a request
+
+Two functions cover what every protected route needs. Both read their
+configuration from the environment, so a route handler needs no setup file:
+
+| Variable | Used by |
+|---|---|
+| `USERBOX_API_URL`, or `NEXT_PUBLIC_USERBOX_API_URL` | both (`https://api.test.userbox.app` today) |
+| `USERBOX_TENANT_ID` (the tenant **UUID**) | both |
+| `USERBOX_API_KEY` (scope `access:check`) | `can()` |
+
+```ts
+// app/api/workspaces/[workspaceId]/projects/[projectId]/route.ts (Next.js App Router)
+import { can, verifyRequest } from "@userbox/node";
+
+export async function DELETE(req: Request, ctx: { params: Promise<{ workspaceId: string; projectId: string }> }) {
+  const user = await verifyRequest(req);
+  if (!user) return Response.json({ error: "unauthenticated" }, { status: 401 });
+  const { workspaceId } = await ctx.params;
+  if (!(await can({ userId: user.userId, workspaceId, permission: "projects.delete" }))) {
+    return Response.json({ error: "forbidden" }, { status: 403 });
+  }
+  // ...
+}
+```
+
+### `verifyRequest(req, options?)` → `Promise<VerifiedUser | null>`
+
+Reads `Authorization: Bearer <access token>` from a `Request` (or a `Headers`
+object, such as `await headers()` in a Server Component) and verifies it:
+
+- the signature is **RS256 only**, against `{apiUrl}/.well-known/jwks.json`.
+  The algorithm is fixed in code; a token whose header says anything else is
+  rejected before a key is used;
+- `exp` (required) and `nbf` (if present), with 5 seconds of clock tolerance;
+- `sub` and `tid` are required, and `tid` must equal `USERBOX_TENANT_ID`.
+  Userbox tokens carry no `iss`/`aud`: `tid` is the tenant binding.
+
+It returns `{ userId, tenantId, expiresAt }`, or `null` for a missing header or
+any failure. **It never throws.** The key set is cached per API URL for
+10 minutes; a token with an unknown `kid` refetches it at most once every
+30 seconds (key rotation).
+
+`verifyAccessToken(token, options?)` does the same for a token you already hold.
+
+Options: `apiUrl`, `tenantId`, `clockToleranceSec`, and `onError(err)`, which
+receives the reason a present token was rejected (`TOKEN_EXPIRED`,
+`INVALID_SIGNATURE`, `TENANT_MISMATCH`, `UNKNOWN_KEY`, …). Without `onError`,
+only problems that are not the caller's fault are printed with `console.warn`:
+`CONFIG_ERROR` (a missing variable) and `JWKS_UNAVAILABLE`.
+
+### `can({ userId, workspaceId, permission }, options?)` → `Promise<boolean>`
+
+The deny-on-error permission check. It returns `true` only when Userbox answers
+`allowed: true`. **Every error returns `false`**: a missing variable, a bad API
+key or scope (401/403), an unknown workspace (404), an invalid permission key
+(422), a rate limit, a server error, a network failure or an unexpected
+response. Empty arguments return `false` without a request. It never throws.
+
+Each error-caused denial is reported once through `options.onError(err)`, or by
+default with a `console.warn` line that holds the error code, the status and
+the platform message (never the API key). Pass `options.client` to use your own
+`UserboxClient`; otherwise one client is built from the environment.
+
+Use `client.can()` instead when your code must tell "denied" from "the check
+failed" (it throws `UserboxError`).
+
+### Environment defaults for `UserboxClient`
+
+Every constructor field is optional: `new UserboxClient()` reads
+`USERBOX_API_KEY`, `USERBOX_TENANT_ID` and `USERBOX_API_URL` /
+`NEXT_PUBLIC_USERBOX_API_URL`. A missing key or tenant id throws `UserboxError`
+`CONFIG_ERROR` from the constructor.
 
 ---
 
@@ -236,7 +312,7 @@ No `any` leaks from the SDK's public surface.
 
 - **No retry / backoff** — wrap your own logic if you need it
 - **No telemetry** — the SDK never phones home
-- **No `console.*` output** — the production build emits zero log calls
+- **No `console.*` output from the client** — only `can()` and `verifyRequest()` print a `console.warn` line, for errors that deny a request, unless you pass `onError`
 - **No browser support** — Node 18+ only; a browser SDK is a future spec
 - **No streaming / WebSockets** — request/response only
 - **No webhook signature helpers** — separate spec

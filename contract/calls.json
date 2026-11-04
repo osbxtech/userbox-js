@@ -58,5 +58,11 @@
     "operation": "GET /v1/audit-logs",
     "sends": ["page", "per_page"],
     "reads": ["items", "total", "page", "per_page"]
+  },
+  {
+    "package": "node",
+    "operation": "GET /.well-known/jwks.json",
+    "sends": [],
+    "reads": []
   }
 ]
