@@ -16,7 +16,7 @@ on:
   workflow_call:
     inputs:
       package:
-        description: "react or node"
+        description: "react, node or cli (cli has no integration tests)"
         type: string
         required: true
 
@@ -36,8 +36,8 @@ jobs:
       - name: Validate the package input
         run: |
           case "$PACKAGE" in
-            ""|react|node) ;;
-            *) printf '::error::package must be react or node\n'; exit 1 ;;
+            ""|react|node|cli) ;;
+            *) printf '::error::package must be react, node or cli\n'; exit 1 ;;
           esac
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

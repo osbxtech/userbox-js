@@ -18,7 +18,7 @@ on:
       package:
         description: Package to release
         type: choice
-        options: [react, node]
+        options: [react, node, cli]
         required: true
       version:
         description: "Version, X.Y.Z-alpha.N (must match package.json and CHANGELOG.md)"
@@ -190,7 +190,7 @@ jobs:
           EXPECTED_SHA256: ${{ needs.prepare.outputs.sha256 }}
         run: |
           case "$TARBALL" in
-            userbox-react-*.tgz|userbox-node-*.tgz) ;;
+            userbox-react-*.tgz|userbox-node-*.tgz|userbox-cli-*.tgz) ;;
             *) printf '::error::unexpected tarball name\n'; exit 1 ;;
           esac
           printf '%s  %s\n' "$EXPECTED_SHA256" "$RUNNER_TEMP/tarball/$TARBALL" | sha256sum -c -

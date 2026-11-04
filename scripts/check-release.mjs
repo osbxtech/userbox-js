@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Checks that a version may be released, before anything is built or published.
 //
-//   node scripts/check-release.mjs --package <react|node> --version <X.Y.Z-alpha.N>
+//   node scripts/check-release.mjs --package <react|node|cli> --version <X.Y.Z-alpha.N>
 //   --root <dir>    the repository root (default: this script's repository; for tests)
 //
 // The checks run in order and the first failure stops the run:
@@ -27,7 +27,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const PACKAGES = ["react", "node"];
+const PACKAGES = ["react", "node", "cli"];
 const VERSION_RE = /^\d+\.\d+\.\d+-alpha\.\d+$/;
 
 class CheckError extends Error {}
@@ -44,7 +44,7 @@ function parseArgs(argv) {
     if (arg === "--package" && value !== undefined) args.package = argv[++i];
     else if (arg === "--version" && value !== undefined) args.version = argv[++i];
     else if (arg === "--root" && value !== undefined) args.root = resolve(argv[++i]);
-    else throw new CheckError(`arguments: expected --package <react|node> --version <X.Y.Z-alpha.N>, found ${JSON.stringify(arg)}`);
+    else throw new CheckError(`arguments: expected --package <react|node|cli> --version <X.Y.Z-alpha.N>, found ${JSON.stringify(arg)}`);
   }
   return args;
 }

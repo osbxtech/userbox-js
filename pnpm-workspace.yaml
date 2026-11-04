@@ -1,4 +1,5 @@
-# Listed explicitly: cli/ is a reserved slot, not a workspace member.
+# Listed explicitly.
 packages:
   - react
   - node
+  - cli

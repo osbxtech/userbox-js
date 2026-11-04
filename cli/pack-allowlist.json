@@ -1,0 +1,12 @@
+{
+  "allow": [
+    "package/package.json",
+    "package/README.md",
+    "package/LICENSE",
+    "package/CHANGELOG.md",
+    "package/SECURITY.md",
+    "package/dist/**/*.{js,cjs,mjs,d.ts,d.cts,map}"
+  ],
+  "require": ["package/package.json", "package/README.md", "package/LICENSE"],
+  "forbid": ["**/.env*", "**/src/**", "**/tests/**", "**/*.test.*"]
+}
