@@ -1,8 +1,38 @@
-import { DEFAULT_API_URL, Session, expiryFrom, rawRequest, type TokenPair } from "../api.js";
+import { homedir } from "node:os";
+import { ApiError, DEFAULT_API_URL, Session, expiryFrom, rawRequest, type TokenPair } from "../api.js";
 import type { Flags } from "../bin.js";
-import { clearCredentials, loadCredentials, saveCredentials } from "../credentials.js";
-import type { Output } from "../output.js";
+import { clearCredentials, credentialsPath, loadCredentials, saveCredentials } from "../credentials.js";
+import { CliError, type Output } from "../output.js";
 import { ask, requireTty } from "../prompt.js";
+import { resolveSignupUrl } from "../signup.js";
+
+/**
+ * POST /v1/auth/login. A 401 means unknown email, wrong password or unknown
+ * tenant slug; the API does not say which, and neither does the CLI. The error
+ * points to founder sign-up, which only receives a link, never the password.
+ */
+export async function logIn(
+  apiUrl: string,
+  creds: { email: string; password: string; tenantSlug: string },
+): Promise<TokenPair> {
+  try {
+    return await rawRequest<TokenPair>(apiUrl, "/v1/auth/login", {
+      method: "POST",
+      body: { email: creds.email, password: creds.password, tenant_slug: creds.tenantSlug },
+    });
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      const signupUrl = await resolveSignupUrl(apiUrl);
+      throw new CliError(
+        "INVALID_CREDENTIALS",
+        "login failed: invalid email, password or tenant slug",
+        `No account yet? Create one at ${signupUrl}`,
+        { signup_url: signupUrl },
+      );
+    }
+    throw err;
+  }
+}
 
 interface Tenant {
   id: string;
@@ -18,10 +48,7 @@ export async function login(flags: Flags, out: Output): Promise<void> {
   const email = await ask("Email", { fallback: previous?.email ?? "" });
   const password = await ask("Password", { secret: true });
 
-  const tokens = await rawRequest<TokenPair>(apiUrl, "/v1/auth/login", {
-    method: "POST",
-    body: { email, password, tenant_slug: tenantSlug },
-  });
+  const tokens = await logIn(apiUrl, { email, password, tenantSlug });
   const tenant = await rawRequest<Tenant>(apiUrl, "/v1/tenants/me", {
     headers: { Authorization: `Bearer ${tokens.access_token}` },
   });
@@ -36,8 +63,13 @@ export async function login(flags: Flags, out: Output): Promise<void> {
   });
   out.done({ tenant: { id: tenant.id, slug: tenant.slug }, email, apiUrl }, [
     `Logged in to ${tenant.name} (${tenant.slug}) as ${email}.`,
-    "The login is stored in ~/.config/userbox/credentials.json and lasts 7 days of inactivity.",
+    `The login is stored in ${displayPath(credentialsPath())} and lasts 7 days of inactivity.`,
   ]);
+}
+
+/** `/home/ana/.config/userbox/credentials.json` → `~/.config/userbox/credentials.json`. */
+export function displayPath(path: string, home: string = homedir()): string {
+  return home && (path === home || path.startsWith(home + "/")) ? "~" + path.slice(home.length) : path;
 }
 
 export function logout(out: Output): void {

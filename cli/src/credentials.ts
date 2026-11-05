@@ -22,7 +22,8 @@ export function configDir(): string {
   return join(base, "userbox");
 }
 
-function credentialsPath(): string {
+/** Where the login is stored; honours XDG_CONFIG_HOME. */
+export function credentialsPath(): string {
   return join(configDir(), "credentials.json");
 }
 
