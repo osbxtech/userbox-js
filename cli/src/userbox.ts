@@ -6,6 +6,7 @@ import { CliError } from "./output.js";
 export interface Environment {
   id: string;
   name: string;
+  slug?: string;
   type: "production" | "staging" | "development";
   isDefault: boolean;
 }
@@ -33,11 +34,58 @@ export interface AuthSettings {
   allow_self_signup: boolean;
 }
 
-export async function defaultEnvironment(s: Session): Promise<Environment> {
+export async function listEnvironments(s: Session): Promise<Environment[]> {
   const { environments } = await s.request<{ environments: Environment[] }>("/v1/environments");
-  const env = environments.find((e) => e.isDefault);
-  if (!env) throw new CliError("NO_DEFAULT_ENVIRONMENT", "the tenant has no default environment");
-  return env;
+  return environments;
+}
+
+function describe(e: Environment): string {
+  const tags = [e.type, ...(e.isDefault ? ["default"] : [])];
+  return `${e.slug ?? e.name} (${tags.join(", ")})`;
+}
+
+/**
+ * Picks the environment named by `--env`: matched against slug, name, then
+ * type (a tenant has at most one environment per type), case-insensitively.
+ * Without a name, the tenant's default environment.
+ */
+export function pickEnvironment(environments: Environment[], name?: string): Environment {
+  if (name === undefined) {
+    const env = environments.find((e) => e.isDefault);
+    if (!env) throw new CliError("NO_DEFAULT_ENVIRONMENT", "the tenant has no default environment");
+    return env;
+  }
+  const wanted = name.trim().toLowerCase();
+  const env =
+    environments.find((e) => e.slug?.toLowerCase() === wanted) ??
+    environments.find((e) => e.name.toLowerCase() === wanted) ??
+    environments.find((e) => e.type === wanted);
+  if (env) return env;
+  throw new CliError(
+    "UNKNOWN_ENVIRONMENT",
+    `no environment "${name}" in this tenant`,
+    environments.length > 0
+      ? `Available: ${environments.map(describe).join(", ")}. Omit --env for the default; create more in Console → Environments.`
+      : "The tenant has no environments.",
+    {
+      environments: environments.map((e) => ({
+        id: e.id,
+        name: e.name,
+        slug: e.slug ?? null,
+        type: e.type,
+        isDefault: e.isDefault,
+      })),
+    },
+  );
+}
+
+/** The environment named by `--env`, or the tenant's default one. */
+export async function resolveEnvironment(s: Session, name?: string): Promise<Environment> {
+  return pickEnvironment(await listEnvironments(s), name);
+}
+
+export async function defaultEnvironment(s: Session): Promise<Environment> {
+  return resolveEnvironment(s);
 }
 
 export function getAuthSettings(s: Session, env: Environment): Promise<AuthSettings> {

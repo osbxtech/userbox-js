@@ -11,18 +11,18 @@ import {
   type Workspace,
   createPermission,
   createRole,
-  defaultEnvironment,
   grantRolePermission,
   listExternalPermissions,
   listRolePermissions,
   listRoles,
   listWorkspaces,
+  resolveEnvironment,
   revokeRolePermission,
 } from "../userbox.js";
 
 // Permissions live in the environment; roles live in each workspace. `apply`
 // creates the permissions once and syncs the roles into every active
-// workspace of the default environment.
+// workspace of the default environment (or the one named by `--env`).
 
 type Sync = Awaited<ReturnType<typeof syncManifest>>;
 
@@ -43,7 +43,7 @@ export async function confirmRevokes(sync: Sync, flags: Flags, command: string):
     throw new CliError(
       "NEEDS_HUMAN",
       `the plan removes permissions from existing roles:\n${lines.join("\n")}`,
-      `Ask the human to review it and run \`npx @userbox/cli ${command}\` in their own terminal.`,
+      `Ask the human to review it and run \`npx @userbox/cli ${command}${flags.env ? ` --env ${flags.env}` : ""}\` in their own terminal.`,
     );
   }
   process.stdout.write(`This removes permissions from existing roles:\n${lines.join("\n")}\n`);
@@ -139,7 +139,7 @@ function describe(sync: Sync): string[] {
 export async function apply(flags: Flags, out: Output): Promise<void> {
   const manifest = loadManifest(process.cwd());
   const session = Session.load();
-  const env = await defaultEnvironment(session);
+  const env = await resolveEnvironment(session, flags.env);
   const workspaces = await listWorkspaces(session, env);
   if (workspaces.length === 0) {
     out.warn("No workspaces yet: roles are created per workspace. Run `userbox dev seed` to create one.");
@@ -150,7 +150,7 @@ export async function apply(flags: Flags, out: Output): Promise<void> {
   if (extras.size > 0) out.warn(`Not in userbox.yaml, left as they are: ${[...extras].join(", ")}`);
   const empty = sync.createdPermissions.length === 0 && sync.plans.every((p) => planIsEmpty(p.plan));
   const summary = {
-    environment: { id: env.id, name: env.name },
+    environment: { id: env.id, name: env.name, slug: env.slug ?? null, type: env.type },
     workspaces: workspaces.map((w) => w.slug ?? w.id),
     changes,
   };

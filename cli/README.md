@@ -14,6 +14,7 @@ npx @userbox/cli init       # in the app root
 npx @userbox/cli apply      # sync userbox.yaml
 npx @userbox/cli dev seed   # a dev workspace where you are admin
 npx @userbox/cli doctor     # check everything
+npx @userbox/cli doctor --go-live   # before launch: no dev leftovers in production
 ```
 
 ## For coding agents
@@ -33,6 +34,13 @@ Secrets never pass through the model:
   it to the human, then run `apply --yes`. A plan that removes permissions from
   an existing role fails with `NEEDS_HUMAN` even with `--yes`: the human runs
   `npx @userbox/cli apply` in their own terminal.
+- `--env <name>` with an unknown name fails with `UNKNOWN_ENVIRONMENT`; the
+  hint and the `--json` error (`environments`, at the top level) list the
+  tenant's environments. Without `--env` every command uses the default one.
+- `doctor --go-live` adds `goLive: { environment, ready }` to the `--json`
+  result; its findings are `warn` checks, so the exit code stays 0. Show them
+  to the human before launch: removing a redirect domain or archiving a
+  workspace is a console action.
 
 ## Commands
 
@@ -40,10 +48,32 @@ Secrets never pass through the model:
 |---|---|
 | `login` | Logs in as a tenant admin (a user with console access). Stores the session in `~/.config/userbox/credentials.json`, mode 600. `--api-url` picks another API. |
 | `logout` / `whoami` | Forget / show the login. |
-| `init` | Needs Next.js with `app/` or `src/app/`. Adds the `--origin` host (default `http://localhost:3000`) to the allowed redirect domains, creates an API key with `access:check`, `memberships:read`, `workspaces:read` unless `.env.local` already has one, merges the five variables into `.env.local` without touching existing values (`--force` replaces them), makes sure `.env.local` is git-ignored, installs `@userbox/react@alpha` and `@userbox/node@alpha` (`--skip-install` skips it), and writes `providers.tsx`, `auth/callback/page.tsx` and `api/auth/refresh/route.ts` if they do not exist. It wraps `{children}` in the root layout with `<Providers>` when that edit is unambiguous. |
-| `apply` | Reads `userbox.yaml`, creates missing permissions, and makes every declared role in every active workspace hold exactly its listed permissions. Permissions and roles that are not in the file are reported, never deleted. Removing a permission from an existing role needs a human at a terminal, even with `--yes`. |
-| `dev seed` | Creates (or reuses) the workspace `dev`, syncs `userbox.yaml` into it and gives you the `admin` role. `--invite email[:role]` invites more users by email (role defaults to `member`). Warns when the default environment is a production environment. |
-| `doctor` | Checks the project, SDK versions, auth files, `.env.local`, secrets in `NEXT_PUBLIC_*`, `.gitignore`, the API and JWKS, the API key's tenant and `access:check` scope, and, when logged in, the redirect domain and sign-up mode. Exits 1 when a check fails. |
+| `init` | Works in the default environment, or the one named by `--env`. Needs Next.js with `app/` or `src/app/`. Adds the `--origin` host (default `http://localhost:3000`) to the allowed redirect domains, creates an API key with `access:check`, `memberships:read`, `workspaces:read` unless `.env.local` already has one, merges the five variables into `.env.local` without touching existing values (`--force` replaces them), makes sure `.env.local` is git-ignored, installs `@userbox/react@alpha` and `@userbox/node@alpha` (`--skip-install` skips it), and writes `providers.tsx`, `auth/callback/page.tsx` and `api/auth/refresh/route.ts` if they do not exist. It wraps `{children}` in the root layout with `<Providers>` when that edit is unambiguous. |
+| `apply` | Reads `userbox.yaml`, creates missing permissions, and makes every declared role in every active workspace of the environment (default, or `--env`) hold exactly its listed permissions. Permissions and roles that are not in the file are reported, never deleted. Removing a permission from an existing role needs a human at a terminal, even with `--yes`. |
+| `dev seed` | Creates (or reuses) the workspace `dev` in the default environment or the one named by `--env`, syncs `userbox.yaml` into it and gives you the `admin` role. `--invite email[:role]` invites more users by email (role defaults to `member`). Warns when that environment is a production environment. |
+| `doctor` | Checks the project, SDK versions, auth files, `.env.local`, secrets in `NEXT_PUBLIC_*`, `.gitignore`, the API and JWKS, the API key's tenant and `access:check` scope, and, when logged in, the redirect domain and sign-up mode (of the default environment, or `--env`). `--go-live` also checks the production environment: it warns about `localhost` / `127.0.0.1` redirect domains and about the `dev` workspace that `dev seed` creates. Exits 1 when a check fails; warnings do not fail. |
+
+## Environments
+
+A new tenant has one environment, production, and it is the default: `init`,
+`apply`, `dev seed` and `doctor` use it unless you pass `--env`, so the first
+run works with no setup. To keep local development out of production, create
+a development or staging environment in the console and pass its slug, name
+or type:
+
+```bash
+npx @userbox/cli init --env development       # key + localhost redirect there
+npx @userbox/cli apply --env development
+npx @userbox/cli dev seed --env development
+npx @userbox/cli doctor --env development
+```
+
+`init --env` reuses an existing `USERBOX_API_KEY` in `.env.local` unless you
+pass `--force`, and warns that it may belong to another environment.
+
+Before going live, `npx @userbox/cli doctor --go-live` lists what the
+default flow left in production: `localhost` redirect domains and the `dev`
+workspace.
 
 ## `userbox.yaml`
 

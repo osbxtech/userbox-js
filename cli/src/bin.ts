@@ -20,7 +20,7 @@ Commands
   init               Set up this Next.js app: env, API key, SDKs, auth files
   apply              Sync userbox.yaml (permissions and roles) to the environment
   dev seed           Create a dev workspace with an admin and a member user
-  doctor             Check this app's Userbox setup
+  doctor             Check this app's Userbox setup (--go-live: before launch)
 
 Options
   --json             Machine-readable output (for coding agents)
@@ -28,6 +28,11 @@ Options
   --force            init: replace existing USERBOX_* values in .env.local
   --origin <url>     init: the app origin (default http://localhost:3000)
   --skip-install     init: do not install the SDKs
+  --env <name>       init, apply, dev seed, doctor: target this environment
+                     (slug, name or type, e.g. development) instead of the
+                     default one, which is production for a new tenant
+  --go-live          doctor: also check the production environment for
+                     localhost redirect domains and the dev workspace
   --api-url <url>    login: the Userbox API (default https://api.test.userbox.app)
   --invite <email[:role]>  dev seed: invite a user (repeatable, role defaults to member)
   --help, -h         Show this help
@@ -43,6 +48,9 @@ export interface Flags {
   skipInstall: boolean;
   apiUrl?: string;
   invite: string[];
+  /** `--env`: an environment slug, name or type; the default environment when absent. */
+  env?: string;
+  goLive: boolean;
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -58,6 +66,8 @@ async function main(argv: string[]): Promise<number> {
       "skip-install": { type: "boolean", default: false },
       "api-url": { type: "string" },
       invite: { type: "string", multiple: true, default: [] },
+      env: { type: "string" },
+      "go-live": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
     },
@@ -70,6 +80,8 @@ async function main(argv: string[]): Promise<number> {
     skipInstall: values["skip-install"],
     apiUrl: values["api-url"],
     invite: values.invite,
+    env: values.env,
+    goLive: values["go-live"],
   };
   if (values.version) {
     process.stdout.write(`${VERSION}\n`);

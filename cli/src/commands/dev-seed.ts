@@ -7,11 +7,11 @@ import type { Output } from "../output.js";
 import {
   assignRole,
   createWorkspace,
-  defaultEnvironment,
   inviteMember,
   listMemberships,
   listRoles,
   listWorkspaces,
+  resolveEnvironment,
 } from "../userbox.js";
 import { confirmRevokes, executeSync, loadManifest, syncManifest } from "./apply.js";
 
@@ -23,11 +23,15 @@ const SLUG = "dev";
 
 export async function devSeed(flags: Flags, out: Output): Promise<void> {
   const session = Session.load();
-  const env = await defaultEnvironment(session);
+  const env = await resolveEnvironment(session, flags.env);
   // A new tenant's default environment has type "production"; on the alpha
   // platform that is still test data, so warn instead of refusing.
   if (env.type === "production") {
-    out.warn(`The default environment "${env.name}" is a production environment; the dev workspace is created there.`);
+    out.warn(
+      flags.env
+        ? `The environment "${env.name}" is a production environment; the dev workspace is created there.`
+        : `The default environment "${env.name}" is a production environment; the dev workspace is created there. Pass --env <name> to use another environment; \`userbox doctor --go-live\` reminds you to remove it before launch.`,
+    );
   }
 
   const workspaces = await listWorkspaces(session, env);
@@ -79,12 +83,12 @@ export async function devSeed(flags: Flags, out: Output): Promise<void> {
   }
 
   out.done(
-    { workspace: { id: ws.id, slug: SLUG }, environment: { id: env.id, name: env.name }, adminAssigned, invited },
+    { workspace: { id: ws.id, slug: SLUG }, environment: { id: env.id, name: env.name, slug: env.slug ?? null, type: env.type }, adminAssigned, invited },
     [
-      `Dev workspace: ${ws.id}`,
+      `Dev workspace: ${ws.id} (environment ${env.name})`,
       "Sign in to your app with your Userbox login; you are admin in this workspace.",
       ...(flags.invite.length === 0
-        ? ["Add a second user with `userbox dev seed --invite someone@example.com:member` (they get an email)."]
+        ? [`Add a second user with \`userbox dev seed${flags.env ? ` --env ${flags.env}` : ""} --invite someone@example.com:member\` (they get an email).`]
         : []),
     ],
   );

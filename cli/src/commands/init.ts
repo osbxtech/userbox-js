@@ -9,7 +9,7 @@ import { ENV_KEYS, mergeEnv, parseEnv } from "../envfile.js";
 import { CliError, type Output } from "../output.js";
 import { detectNextProject, installCommand } from "../project.js";
 import { scaffold } from "../scaffold.js";
-import { createApiKey, defaultEnvironment, ensureRedirectDomain } from "../userbox.js";
+import { createApiKey, ensureRedirectDomain, resolveEnvironment } from "../userbox.js";
 
 export const KEY_SCOPES = ["access:check", "memberships:read", "workspaces:read"];
 const SDKS = ["@userbox/react@alpha", "@userbox/node@alpha"];
@@ -38,9 +38,15 @@ export async function init(flags: Flags, out: Output): Promise<void> {
     throw new CliError("INVALID_ORIGIN", `--origin must be a URL such as http://localhost:3000, got "${origin}"`);
   }
 
-  const env = await defaultEnvironment(session);
+  const env = await resolveEnvironment(session, flags.env);
   out.step(`Tenant ${session.tenantSlug}, environment ${env.name} (${env.type})`);
-  if (env.type === "production") out.warn("The default environment is production; the key created here is a production key.");
+  if (env.type === "production") {
+    out.warn(
+      flags.env
+        ? `The environment "${env.name}" is production; the key created here is a production key.`
+        : "The default environment is production; the key created here is a production key. Pass --env <name> to use another environment.",
+    );
+  }
 
   if (await ensureRedirectDomain(session, env, host)) out.step(`Added ${host} to the allowed redirect domains`);
   else out.step(`${host} is already an allowed redirect domain`);
@@ -67,6 +73,9 @@ export async function init(flags: Flags, out: Output): Promise<void> {
   out.step(`.env.local: ${merged.added.length} added, ${merged.replaced.length} replaced, ${merged.kept.length} kept`);
   const ignored = ensureGitignored(root);
   if (ignored) out.step("Added .env.local to .gitignore");
+  if (flags.env && !keyCreated) {
+    out.warn(`.env.local keeps its existing USERBOX_API_KEY, which may belong to another environment; run with --force for a key in "${env.name}".`);
+  }
   for (const key of merged.kept) {
     if (current.get(key) !== values[key] && key !== "USERBOX_API_KEY") {
       out.warn(`.env.local keeps a different ${key}; run with --force to replace it.`);
@@ -89,26 +98,29 @@ export async function init(flags: Flags, out: Output): Promise<void> {
   }
 
   const files = scaffold(project);
+  const envArg = flags.env ? ` --env ${flags.env}` : "";
   for (const f of files.written) out.step(`Wrote ${f}`);
   for (const t of files.todo) out.warn(t);
 
   out.done(
     {
       tenant: { id: session.tenantId, slug: session.tenantSlug },
-      environment: { id: env.id, name: env.name, type: env.type },
+      environment: { id: env.id, name: env.name, slug: env.slug ?? null, type: env.type },
       redirectDomain: host,
       envFile: { path: ".env.local", added: merged.added, replaced: merged.replaced, kept: merged.kept },
       apiKeyCreated: keyCreated,
       sdksInstalled: installed,
       files,
-      next: ["userbox apply", "userbox dev seed", "userbox doctor"],
+      next: flags.env
+        ? [`userbox apply --env ${flags.env}`, `userbox dev seed --env ${flags.env}`, `userbox doctor --env ${flags.env}`]
+        : ["userbox apply", "userbox dev seed", "userbox doctor"],
     },
     [
       "",
-      "Userbox is set up. Next:",
-      "  1. Declare permissions and roles in userbox.yaml, then run `userbox apply`.",
-      "  2. Run `userbox dev seed` for a workspace where you are admin.",
-      "  3. Run `userbox doctor`, then start the app and sign in.",
+      `Userbox is set up in environment ${env.name}. Next:`,
+      `  1. Declare permissions and roles in userbox.yaml, then run \`userbox apply${envArg}\`.`,
+      `  2. Run \`userbox dev seed${envArg}\` for a workspace where you are admin.`,
+      `  3. Run \`userbox doctor${envArg}\`, then start the app and sign in.`,
       "Use verifyRequest() and can() from @userbox/node in your API routes (see https://docs.test.userbox.app/llms.txt).",
     ],
   );
