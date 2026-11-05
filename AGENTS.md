@@ -13,7 +13,7 @@ the SDKs should read the package READMEs instead.
 - `scripts/`: repository checks and release tooling, each with a `node --test` file: `check-pack`, `check-contract`, `check-changeset`, `check-release`, `verify-published`, `sync-contract`; `workflows.test.mjs` holds the workflow policy.
 - `.changeset/`: pending changesets; the repository is in `alpha` pre-release mode.
 - `docs/`: the SDK author contract and the release procedure.
-- `cli/`: `@userbox/cli`, the `userbox` command (login, init, apply, dev seed, doctor). Depends on `yaml` only.
+- `cli/`: `@userbox/cli`, the `userbox` command (login, init, apply, dev seed, doctor; `--env` targets a non-default environment for init/apply/dev seed, `doctor --go-live` checks production before launch). Depends on `yaml` only.
 
 ## Commands
 

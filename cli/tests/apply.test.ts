@@ -4,7 +4,7 @@ import type { Flags } from "../src/bin.js";
 import { confirmRevokes } from "../src/commands/apply.js";
 import { type Plan, planApply } from "../src/manifest.js";
 
-const flags: Flags = { json: true, yes: true, force: false, skipInstall: false, invite: [] };
+const flags: Flags = { json: true, yes: true, force: false, skipInstall: false, invite: [], goLive: false };
 
 function syncWith(plan: Plan) {
   return {

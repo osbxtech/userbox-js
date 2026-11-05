@@ -8,11 +8,18 @@ import { loadCredentials } from "../credentials.js";
 import { ENV_KEYS, parseEnv } from "../envfile.js";
 import { CliError, type Output } from "../output.js";
 import { detectNextProject } from "../project.js";
-import { defaultEnvironment, getAuthSettings } from "../userbox.js";
+import {
+  type Environment,
+  type Workspace,
+  getAuthSettings,
+  listEnvironments,
+  listWorkspaces,
+  pickEnvironment,
+} from "../userbox.js";
 
 type Status = "pass" | "warn" | "fail" | "skip";
 
-interface Check {
+export interface Check {
   name: string;
   status: Status;
   message: string;
@@ -25,6 +32,51 @@ function alphaNumber(version: string): number | null {
   const m = /^1\.0\.0-alpha\.(\d+)$/.exec(version);
   if (m) return Number(m[1]);
   return /^\d+\.\d+\.\d+$/.test(version) && !version.startsWith("0.") ? Number.POSITIVE_INFINITY : null;
+}
+
+/** The workspace `userbox dev seed` creates. */
+const DEV_WORKSPACE_SLUG = "dev";
+
+/** True for a redirect domain that only works on a developer machine. */
+export function isLocalRedirectDomain(domain: string): boolean {
+  let host = domain.trim().toLowerCase();
+  host = host.replace(/^[a-z][a-z0-9+.-]*:\/\//, "").replace(/\/.*$/, "");
+  if (host.startsWith("[")) host = host.slice(0, host.indexOf("]") + 1);
+  else if (host.split(":").length === 2) host = host.split(":")[0] ?? host;
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    /^127(\.\d{1,3}){3}$/.test(host) ||
+    host === "0.0.0.0" ||
+    host === "::1" ||
+    host === "[::1]"
+  );
+}
+
+/** The `--go-live` checks for the production environment. Warnings, never failures. */
+export function goLiveChecks(env: Environment, domains: string[], workspaces: Workspace[]): Check[] {
+  const local = domains.filter(isLocalRedirectDomain);
+  const dev = workspaces.find((w) => w.slug === DEV_WORKSPACE_SLUG);
+  return [
+    local.length === 0
+      ? { name: "go-live: redirect domains", status: "pass", message: `no local host allowed in ${env.name}` }
+      : {
+          name: "go-live: redirect domains",
+          status: "warn",
+          message: `${env.name} allows redirects to ${local.join(", ")}`,
+          hint: env.isDefault
+            ? `Remove ${local.length === 1 ? "it" : "them"} in Console → Auth settings for ${env.name} at launch. Hosted sign-in only reads the default environment's redirect domains for now, so sign-in from a local app stops working once ${local.length === 1 ? "it is" : "they are"} gone.`
+            : `Remove ${local.length === 1 ? "it" : "them"} in Console → Auth settings for ${env.name} before going live.`,
+        },
+    dev
+      ? {
+          name: "go-live: dev workspace",
+          status: "warn",
+          message: `${env.name} has the workspace "${DEV_WORKSPACE_SLUG}" (${dev.id}) from \`userbox dev seed\``,
+          hint: `Archive it in Console → Workspaces before going live; seed dev data with \`userbox dev seed --env <name>\` instead.`,
+        }
+      : { name: "go-live: dev workspace", status: "pass", message: `no "${DEV_WORKSPACE_SLUG}" workspace in ${env.name}` },
+  ];
 }
 
 export async function doctor(flags: Flags, out: Output): Promise<number> {
@@ -138,15 +190,22 @@ export async function doctor(flags: Flags, out: Output): Promise<number> {
 
   // Checks that need the CLI login
   const creds = loadCredentials();
+  let goLive: { environment: { id: string; name: string } | null; ready: boolean } | undefined;
   if (!creds) {
     add({ name: "redirect domain", status: "skip", message: "not logged in", hint: "Run `userbox login` to also check the tenant settings." });
+    if (flags.goLive) {
+      add({ name: "go-live", status: "skip", message: "not logged in", hint: "Ask the human to run `npx @userbox/cli login`, then run `userbox doctor --go-live` again." });
+      goLive = { environment: null, ready: false };
+    }
   } else {
     try {
       const session = Session.load();
       if (tenantId && session.tenantId !== tenantId) {
         add({ name: "login", status: "warn", message: `logged in to ${session.tenantSlug}, but .env.local points at another tenant` });
       } else {
-        const envr = await defaultEnvironment(session);
+        const environments = await listEnvironments(session);
+        // Hosted sign-in reads the default environment's auth settings only.
+        const envr = pickEnvironment(environments);
         const settings = await getAuthSettings(session, envr);
         const host = new URL(env.get("APP_ORIGIN") ?? "http://localhost:3000").hostname;
         const domains = settings.allowed_redirect_domains ?? [];
@@ -156,15 +215,38 @@ export async function doctor(flags: Flags, out: Output): Promise<number> {
         add(settings.allow_self_signup
           ? { name: "sign-up", status: "pass", message: "self-service sign-up is on" }
           : { name: "sign-up", status: "warn", message: "sign-up is invitation-only", hint: "Fine for dev. Turn on self-service sign-up in the console if new users should register." });
+
+        if (flags.goLive) {
+          const prod = environments.find((e) => e.type === "production");
+          if (!prod) {
+            add({ name: "go-live", status: "skip", message: "the tenant has no production environment" });
+            goLive = { environment: null, ready: false };
+          } else {
+            const prodSettings = prod.id === envr.id ? settings : await getAuthSettings(session, prod);
+            const found = goLiveChecks(prod, prodSettings.allowed_redirect_domains ?? [], await listWorkspaces(session, prod));
+            for (const c of found) add(c);
+            goLive = { environment: { id: prod.id, name: prod.name }, ready: found.every((c) => c.status === "pass") };
+          }
+        }
       }
     } catch (err) {
       add({ name: "login", status: "warn", message: (err as Error).message, hint: (err as CliError).hint });
     }
   }
+  if (flags.goLive && !goLive) {
+    add({ name: "go-live", status: "skip", message: "the tenant settings could not be checked (see above)" });
+    goLive = { environment: null, ready: false };
+  }
 
   const failed = checks.filter((c) => c.status === "fail").length;
-  out.done({ healthy: failed === 0, checks }, [
-    failed === 0 ? "\nAll checks passed." : `\n${failed} check(s) failed.`,
-  ]);
+  const lines = [failed === 0 ? "\nAll checks passed." : `\n${failed} check(s) failed.`];
+  if (goLive) {
+    lines.push(
+      goLive.ready
+        ? `Go-live: ${goLive.environment?.name ?? "production"} has no dev leftovers.`
+        : "Go-live: review the go-live warnings above before launch.",
+    );
+  }
+  out.done({ healthy: failed === 0, checks, ...(goLive ? { goLive } : {}) }, lines);
   return failed === 0 ? 0 : 1;
 }
