@@ -28,9 +28,11 @@ Options
   --force            init: replace existing USERBOX_* values in .env.local
   --origin <url>     init: the app origin (default http://localhost:3000)
   --skip-install     init: do not install the SDKs
-  --env <name>       init, apply, dev seed, doctor: target this environment
-                     (slug, name or type, e.g. development) instead of the
-                     default one, which is production for a new tenant
+  --env <name>       init, apply, dev seed: target this environment (slug,
+                     name or type, e.g. development) instead of the default
+                     one, which is production for a new tenant. The redirect
+                     domain always goes to the default environment: hosted
+                     sign-in reads only that one for now
   --go-live          doctor: also check the production environment for
                      localhost redirect domains and the dev workspace
   --api-url <url>    login: the Userbox API (default https://api.test.userbox.app)

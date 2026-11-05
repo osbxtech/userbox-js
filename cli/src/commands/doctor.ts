@@ -64,7 +64,9 @@ export function goLiveChecks(env: Environment, domains: string[], workspaces: Wo
           name: "go-live: redirect domains",
           status: "warn",
           message: `${env.name} allows redirects to ${local.join(", ")}`,
-          hint: `Remove ${local.length === 1 ? "it" : "them"} in Console → Auth settings for ${env.name} before going live; use \`userbox init --env <name>\` for local development.`,
+          hint: env.isDefault
+            ? `Remove ${local.length === 1 ? "it" : "them"} in Console → Auth settings for ${env.name} at launch. Hosted sign-in only reads the default environment's redirect domains for now, so sign-in from a local app stops working once ${local.length === 1 ? "it is" : "they are"} gone.`
+            : `Remove ${local.length === 1 ? "it" : "them"} in Console → Auth settings for ${env.name} before going live.`,
         },
     dev
       ? {
@@ -202,7 +204,8 @@ export async function doctor(flags: Flags, out: Output): Promise<number> {
         add({ name: "login", status: "warn", message: `logged in to ${session.tenantSlug}, but .env.local points at another tenant` });
       } else {
         const environments = await listEnvironments(session);
-        const envr = pickEnvironment(environments, flags.env);
+        // Hosted sign-in reads the default environment's auth settings only.
+        const envr = pickEnvironment(environments);
         const settings = await getAuthSettings(session, envr);
         const host = new URL(env.get("APP_ORIGIN") ?? "http://localhost:3000").hostname;
         const domains = settings.allowed_redirect_domains ?? [];
