@@ -1,6 +1,7 @@
+import { homedir } from "node:os";
 import { ApiError, DEFAULT_API_URL, Session, expiryFrom, rawRequest, type TokenPair } from "../api.js";
 import type { Flags } from "../bin.js";
-import { clearCredentials, loadCredentials, saveCredentials } from "../credentials.js";
+import { clearCredentials, credentialsPath, loadCredentials, saveCredentials } from "../credentials.js";
 import { CliError, type Output } from "../output.js";
 import { ask, requireTty } from "../prompt.js";
 import { resolveSignupUrl } from "../signup.js";
@@ -62,8 +63,13 @@ export async function login(flags: Flags, out: Output): Promise<void> {
   });
   out.done({ tenant: { id: tenant.id, slug: tenant.slug }, email, apiUrl }, [
     `Logged in to ${tenant.name} (${tenant.slug}) as ${email}.`,
-    "The login is stored in ~/.config/userbox/credentials.json and lasts 7 days of inactivity.",
+    `The login is stored in ${displayPath(credentialsPath())} and lasts 7 days of inactivity.`,
   ]);
+}
+
+/** `/home/ana/.config/userbox/credentials.json` → `~/.config/userbox/credentials.json`. */
+export function displayPath(path: string, home: string = homedir()): string {
+  return home && (path === home || path.startsWith(home + "/")) ? "~" + path.slice(home.length) : path;
 }
 
 export function logout(out: Output): void {

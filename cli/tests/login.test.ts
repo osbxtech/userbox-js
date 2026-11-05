@@ -126,3 +126,26 @@ describe("printError --json", () => {
     }
   });
 });
+
+describe("credentials path in the login message", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("honours XDG_CONFIG_HOME", async () => {
+    vi.stubEnv("XDG_CONFIG_HOME", "/tmp/xdg-test");
+    const { credentialsPath } = await import("../src/credentials.js");
+    expect(credentialsPath()).toBe("/tmp/xdg-test/userbox/credentials.json");
+  });
+
+  it("shortens the home directory to ~ and leaves other paths alone", async () => {
+    const { displayPath } = await import("../src/commands/login.js");
+    expect(displayPath("/home/ana/.config/userbox/credentials.json", "/home/ana")).toBe(
+      "~/.config/userbox/credentials.json",
+    );
+    expect(displayPath("/tmp/xdg-test/userbox/credentials.json", "/home/ana")).toBe(
+      "/tmp/xdg-test/userbox/credentials.json",
+    );
+    expect(displayPath("/home/anabel/x", "/home/ana")).toBe("/home/anabel/x");
+  });
+});
