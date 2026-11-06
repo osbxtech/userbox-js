@@ -2,6 +2,31 @@
 
 All notable changes to `@userbox/cli` are documented in this file.
 
+## [0.1.0-alpha.4] — 2026-11-06
+
+### Changed
+- `apply` syncs `userbox.yaml` into the environment's role catalogue
+  (`/v1/roles`) instead of into each workspace. It lists the roles once,
+  creates missing ones with `managed_by: "apply"`, takes over a declared role
+  that was created in the console (name matched case-insensitively and set to
+  the file's spelling), and converges each role's grants with one
+  `PUT /v1/roles/{id}/permissions` after creating the permissions. Platform
+  (internal) permissions on a role are kept. Roles that exist only in the
+  console are reported as "exists only in the console (kept)" and listed in
+  `consoleOnlyRoles`; the `--json` result no longer has `workspaces`. `apply`
+  never deletes a role, and removing a grant still needs a human at a
+  terminal.
+- `dev seed` takes role ids from the catalogue (`GET /v1/roles`) and assigns
+  them to memberships directly. The CLI no longer calls the deprecated
+  `/v1/workspaces/{id}/roles` routes.
+
+### Added
+- `init --workspaces-write`, or a yes to "Will your backend create a
+  workspace per customer?" at a terminal, adds the `workspaces:write` scope to
+  the API key it creates, for `createWorkspace()` in `@userbox/node`. Agents
+  (`--json`, no terminal) are never asked. The `--json` result has
+  `apiKeyScopes`.
+
 ## [0.1.0-alpha.3] — 2026-11-06
 
 ### Added
