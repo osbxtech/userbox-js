@@ -43,10 +43,10 @@ export async function devSeed(flags: Flags, out: Output): Promise<void> {
   }
 
   if (existsSync(join(process.cwd(), "userbox.yaml"))) {
-    const sync = await syncManifest(session, env, loadManifest(process.cwd()), [ws]);
+    const sync = await syncManifest(session, env, loadManifest(process.cwd()));
     if (await confirmRevokes(sync, flags, "dev seed")) {
       await executeSync(session, env, sync);
-      out.step("Synced userbox.yaml roles into the workspace");
+      out.step("Synced userbox.yaml permissions and roles into the environment");
     } else {
       out.warn("Skipped the userbox.yaml sync: nothing was removed from the roles.");
     }

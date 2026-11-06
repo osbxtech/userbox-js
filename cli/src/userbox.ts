@@ -148,33 +148,11 @@ export function createPermission(s: Session, env: Environment, key: string): Pro
   return s.request<Permission>("/v1/permissions", { method: "POST", envId: env.id, body: { key, name: key } });
 }
 
+/** @deprecated Workspace-scoped roles; `dev seed` moves to the catalogue next. */
 export async function listRoles(s: Session, env: Environment, workspaceId: string): Promise<Role[]> {
   const res = await s.request<{ items: Role[] }>(`/v1/workspaces/${workspaceId}/roles?limit=200`, {
     envId: env.id,
   });
-  return res.items;
-}
-
-export function createRole(s: Session, env: Environment, workspaceId: string, name: string): Promise<Role> {
-  return s.request<Role>(`/v1/workspaces/${workspaceId}/roles`, { method: "POST", envId: env.id, body: { name } });
-}
-
-export interface RolePermission {
-  permission_id: string;
-  key: string;
-  type: "internal" | "external";
-}
-
-export async function listRolePermissions(
-  s: Session,
-  env: Environment,
-  workspaceId: string,
-  roleId: string,
-): Promise<RolePermission[]> {
-  const res = await s.request<{ items: RolePermission[] }>(
-    `/v1/workspaces/${workspaceId}/roles/${roleId}/permissions?limit=200`,
-    { envId: env.id },
-  );
   return res.items;
 }
 
@@ -200,29 +178,74 @@ export function inviteMember(s: Session, workspaceId: string, email: string): Pr
 export function assignRole(s: Session, membershipId: string, roleId: string): Promise<unknown> {
   return s.request(`/v1/memberships/${membershipId}/roles`, { method: "POST", body: { role_id: roleId } });
 }
-export function grantRolePermission(
-  s: Session,
-  env: Environment,
-  workspaceId: string,
-  roleId: string,
-  permissionId: string,
-): Promise<unknown> {
-  return s.request(`/v1/workspaces/${workspaceId}/roles/${roleId}/permissions`, {
-    method: "POST",
+
+// The environment's role catalogue (`/v1/roles`). Roles are defined once per
+// environment and assigned to memberships in any workspace.
+
+export interface CatalogueRole {
+  id: string;
+  name: string;
+  description: string | null;
+  /** "console" (edited by hand) or "apply" (owned by userbox.yaml). */
+  managed_by: string;
+  /** "environment" for catalogue roles; older workspace roles report "workspace". */
+  scope?: string;
+}
+
+export interface RoleGrant {
+  permission_id: string;
+  key: string;
+  type: "internal" | "external";
+  effect: string;
+}
+
+async function paginate<T>(s: Session, env: Environment, path: string): Promise<T[]> {
+  const all: T[] = [];
+  let cursor: string | null = null;
+  do {
+    const q: string = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+    const page: { items: T[]; next_cursor: string | null } = await s.request(`${path}?limit=200${q}`, {
+      envId: env.id,
+    });
+    all.push(...page.items);
+    cursor = page.next_cursor;
+  } while (cursor);
+  return all;
+}
+
+export async function listCatalogueRoles(s: Session, env: Environment): Promise<CatalogueRole[]> {
+  const roles = await paginate<CatalogueRole>(s, env, "/v1/roles");
+  return roles.filter((r) => (r.scope ?? "environment") === "environment");
+}
+
+export function listRoleGrants(s: Session, env: Environment, roleId: string): Promise<RoleGrant[]> {
+  return paginate<RoleGrant>(s, env, `/v1/roles/${roleId}/permissions`);
+}
+
+export function createCatalogueRole(s: Session, env: Environment, name: string): Promise<CatalogueRole> {
+  return s.request<CatalogueRole>("/v1/roles", { method: "POST", envId: env.id, body: { name, managed_by: "apply" } });
+}
+
+/** Hand a role over to userbox.yaml (`managed_by: "apply"`) under the file's spelling of its name. */
+export function updateCatalogueRole(s: Session, env: Environment, roleId: string, name: string): Promise<CatalogueRole> {
+  return s.request<CatalogueRole>(`/v1/roles/${roleId}`, {
+    method: "PATCH",
     envId: env.id,
-    body: { permission_id: permissionId, effect: "allow" },
+    body: { name, managed_by: "apply" },
   });
 }
 
-export function revokeRolePermission(
-  s: Session,
-  env: Environment,
-  workspaceId: string,
-  roleId: string,
-  permissionId: string,
-): Promise<unknown> {
-  return s.request(`/v1/workspaces/${workspaceId}/roles/${roleId}/permissions/${permissionId}`, {
-    method: "DELETE",
+export interface GrantsResult {
+  added: string[];
+  changed: string[];
+  removed: string[];
+}
+
+/** Replace the role's grants with exactly `keys` (all `allow`). Unknown keys fail with 422 and change nothing. */
+export function replaceRoleGrants(s: Session, env: Environment, roleId: string, keys: string[]): Promise<GrantsResult> {
+  return s.request<GrantsResult>(`/v1/roles/${roleId}/permissions`, {
+    method: "PUT",
     envId: env.id,
+    body: { grants: keys.map((k) => ({ permission_key: k, effect: "allow" })), managed_by: "apply" },
   });
 }

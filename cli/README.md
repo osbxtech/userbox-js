@@ -51,7 +51,7 @@ Secrets never pass through the model:
 | `login` | Logs in as a tenant admin (a user with console access). Stores the session in `~/.config/userbox/credentials.json`, mode 600. `--api-url` picks another API. |
 | `logout` / `whoami` | Forget / show the login. |
 | `init` | Creates the API key in the default environment, or the one named by `--env`. Needs Next.js with `app/` or `src/app/`. Adds the `--origin` host (default `http://localhost:3000`) to the allowed redirect domains of the default environment (hosted sign-in reads only those), creates an API key with `access:check`, `memberships:read`, `workspaces:read` unless `.env.local` already has one, merges the five variables into `.env.local` without touching existing values (`--force` replaces them), makes sure `.env.local` is git-ignored, installs `@userbox/react@alpha` and `@userbox/node@alpha` (`--skip-install` skips it), and writes `providers.tsx`, `auth/callback/page.tsx` and `api/auth/refresh/route.ts` if they do not exist. It wraps `{children}` in the root layout with `<Providers>` when that edit is unambiguous. |
-| `apply` | Reads `userbox.yaml`, creates missing permissions, and makes every declared role in every active workspace of the environment (default, or `--env`) hold exactly its listed permissions. Permissions and roles that are not in the file are reported, never deleted. Removing a permission from an existing role needs a human at a terminal, even with `--yes`. |
+| `apply` | Reads `userbox.yaml`, creates missing permissions, and makes every declared role in the environment's role catalogue (default environment, or `--env`) hold exactly its listed permissions. A declared role that already exists in the console is taken over by the file. Permissions and roles that are not in the file are reported ("exists only in the console (kept)"), never deleted. Removing a permission from a role needs a human at a terminal, even with `--yes`. |
 | `dev seed` | Creates (or reuses) the workspace `dev` in the default environment or the one named by `--env`, syncs `userbox.yaml` into it and gives you the `admin` role. `--invite email[:role]` invites more users by email (role defaults to `member`). Warns when that environment is a production environment. |
 | `doctor` | Checks the project, SDK versions, auth files, `.env.local`, secrets in `NEXT_PUBLIC_*`, `.gitignore`, the API and JWKS, the API key's tenant and `access:check` scope, and, when logged in, the redirect domain and sign-up mode of the default environment. `--go-live` also checks the production environment: it warns about `localhost` / `127.0.0.1` redirect domains and about the `dev` workspace that `dev seed` creates. Exits 1 when a check fails; warnings do not fail. |
 
@@ -93,8 +93,13 @@ roles:
 ```
 
 Permission keys have 2 to 5 lowercase segments separated by dots. `prefix.*`
-expands to every declared permission with that prefix. Roles live in
-workspaces: run `userbox apply` again after creating a workspace.
+expands to every declared permission with that prefix.
+
+Roles live in the environment's role catalogue and every workspace uses them,
+so a new workspace needs no `apply`. Role names match the console
+case-insensitively. Roles declared here are marked as managed by
+`userbox.yaml`; `apply` keeps their platform (internal) permissions as they
+are.
 
 ## License
 
