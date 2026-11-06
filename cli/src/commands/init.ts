@@ -10,7 +10,16 @@ import { CliError, type Output } from "../output.js";
 import { confirm } from "../prompt.js";
 import { detectNextProject, installCommand } from "../project.js";
 import { scaffold } from "../scaffold.js";
-import { createApiKey, ensureRedirectDomain, listEnvironments, pickEnvironment } from "../userbox.js";
+import {
+  type ApiKeySummary,
+  createApiKey,
+  type Environment,
+  ensureRedirectDomain,
+  findActiveApiKey,
+  listEnvironments,
+  pickEnvironment,
+  revokeApiKey,
+} from "../userbox.js";
 
 export const KEY_SCOPES = ["access:check", "memberships:read", "workspaces:read"];
 /** Opt-in: lets the backend call `createWorkspace()` for each new customer. */
@@ -23,6 +32,53 @@ async function wantsWorkspacesWrite(flags: Flags): Promise<boolean> {
   return confirm("Will your backend create a workspace per customer? (adds the workspaces:write scope to the API key)");
 }
 const SDKS = ["@userbox/react@alpha", "@userbox/node@alpha"];
+
+function interactive(flags: Flags): boolean {
+  return !flags.json && Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+
+/** The active key in `env` that .env.local's USERBOX_API_KEY names; null if none or the lookup fails. */
+async function findReplacedKey(session: Session, env: Environment, raw: string, out: Output): Promise<ApiKeySummary | null> {
+  try {
+    const key = await findActiveApiKey(session, env, raw);
+    if (!key) out.step(`The replaced USERBOX_API_KEY is not an active key of ${env.name}; nothing to revoke there.`);
+    return key;
+  } catch (err) {
+    out.warn(`Could not look up the replaced API key (${(err as Error).message}); check API keys in the console.`);
+    return null;
+  }
+}
+
+/**
+ * Offer to revoke the key `--force` replaced. Only a human at a terminal can
+ * say yes; an agent (`--json`, no TTY) gets a warning and the JSON field,
+ * never a silent revoke, because something else may still use the key.
+ */
+async function settleReplacedKey(
+  session: Session,
+  env: Environment,
+  key: ApiKeySummary,
+  flags: Flags,
+  out: Output,
+): Promise<{ id: string; name: string; prefix: string; revoked: boolean }> {
+  const label = `"${key.name}" (${key.prefix}…)`;
+  let revoked = false;
+  if (interactive(flags) && (await confirm(`Revoke the replaced API key ${label}? Anything still using it stops working.`))) {
+    try {
+      await revokeApiKey(session, env, key.id);
+      revoked = true;
+      out.step(`Revoked the replaced API key ${label}`);
+    } catch (err) {
+      out.warn(`Could not revoke the replaced API key ${label}: ${(err as Error).message}`);
+    }
+  }
+  if (!revoked) {
+    out.warn(
+      `The replaced API key ${label} is still active. Revoke it in the console (API keys) once nothing uses it.`,
+    );
+  }
+  return { id: key.id, name: key.name, prefix: key.prefix, revoked };
+}
 
 function ensureGitignored(root: string): boolean {
   const path = join(root, ".gitignore");
@@ -84,7 +140,12 @@ export async function init(flags: Flags, out: Output): Promise<void> {
   };
   let keyCreated = false;
   let keyScopes: string[] | null = null;
-  if (flags.force || !current.get("USERBOX_API_KEY")) {
+  const oldRaw = current.get("USERBOX_API_KEY");
+  let replaced: ApiKeySummary | null = null;
+  if (flags.force || !oldRaw) {
+    // --force replaces the key in .env.local; find the one it replaces first,
+    // so it can be revoked once the new key is written.
+    if (oldRaw) replaced = await findReplacedKey(session, env, oldRaw, out);
     const date = new Date().toISOString().slice(0, 10);
     keyScopes = (await wantsWorkspacesWrite(flags)) ? [...KEY_SCOPES, WORKSPACES_WRITE] : KEY_SCOPES;
     values.USERBOX_API_KEY = await createApiKey(session, env, `cli ${hostname()} ${date}`, keyScopes);
@@ -96,6 +157,7 @@ export async function init(flags: Flags, out: Output): Promise<void> {
   const merged = mergeEnv(existing, values, flags.force ? new Set(ENV_KEYS) : new Set());
   writeFileSync(envPath, merged.text, { mode: 0o600 });
   out.step(`.env.local: ${merged.added.length} added, ${merged.replaced.length} replaced, ${merged.kept.length} kept`);
+  const replacedApiKey = replaced ? await settleReplacedKey(session, env, replaced, flags, out) : null;
   const ignored = ensureGitignored(root);
   if (ignored) out.step("Added .env.local to .gitignore");
   if (flags.env && !keyCreated) {
@@ -136,6 +198,7 @@ export async function init(flags: Flags, out: Output): Promise<void> {
       envFile: { path: ".env.local", added: merged.added, replaced: merged.replaced, kept: merged.kept },
       apiKeyCreated: keyCreated,
       apiKeyScopes: keyScopes,
+      replacedApiKey,
       sdksInstalled: installed,
       files,
       next: flags.env

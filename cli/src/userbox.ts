@@ -113,6 +113,43 @@ export async function createApiKey(
   return res.key;
 }
 
+export interface ApiKeySummary {
+  id: string;
+  name: string;
+  prefix: string;
+  status: "active" | "revoked";
+}
+
+/**
+ * The public lookup prefix of a raw key (`ub_<ns>_<hex>_<secret>` → `ub_<ns>_<hex>`).
+ * Only this prefix ever leaves the process; the secret part is never sent or printed.
+ */
+export function apiKeyPrefix(raw: string): string | null {
+  const parts = raw.trim().split("_");
+  if (parts.length < 4 || parts[0] !== "ub" || !parts[1] || !parts[2]) return null;
+  return parts.slice(0, 3).join("_");
+}
+
+/** The active key of `env` whose prefix matches `raw`, if any. */
+export async function findActiveApiKey(s: Session, env: Environment, raw: string): Promise<ApiKeySummary | null> {
+  const prefix = apiKeyPrefix(raw);
+  if (!prefix) return null;
+  for (let page = 1; page <= 20; page++) {
+    const res = await s.request<{ items: ApiKeySummary[]; total: number }>(
+      `/v1/api-keys?status=active&per_page=100&page=${page}`,
+      { envId: env.id },
+    );
+    const hit = res.items.find((k) => k.prefix === prefix);
+    if (hit) return hit;
+    if (res.items.length < 100 || page * 100 >= res.total) break;
+  }
+  return null;
+}
+
+export async function revokeApiKey(s: Session, env: Environment, id: string): Promise<void> {
+  await s.request<void>(`/v1/api-keys/${encodeURIComponent(id)}`, { method: "DELETE", envId: env.id });
+}
+
 export async function listWorkspaces(s: Session, env: Environment): Promise<Workspace[]> {
   const res = await s.request<{ items: Workspace[] }>("/v1/workspaces?status=active&per_page=100", {
     envId: env.id,
