@@ -13,7 +13,7 @@ import type { UserboxClientConfig } from "./types/client-config";
 import { ENV, fromEnv, requireSetting } from "./server/env";
 import type { CanArgs, GetUserPermissionsArgs } from "./types/access";
 import type { UserResponse } from "./types/user";
-import type { WorkspaceResponse } from "./types/workspace";
+import type { CreatedWorkspace, CreateWorkspaceArgs, WorkspaceResponse } from "./types/workspace";
 import type {
   GetUserMembershipsArgs,
   MembershipPage,
@@ -38,6 +38,23 @@ interface MembershipListWire {
   total: number;
   page: number;
   page_size: number;
+}
+
+interface CreateWorkspaceWire {
+  id: string;
+  slug: string;
+  external_id: string | null;
+  created?: boolean;
+}
+
+function isCreateWorkspaceShape(body: unknown): body is CreateWorkspaceWire {
+  if (typeof body !== "object" || body === null) return false;
+  const v = body as Record<string, unknown>;
+  return (
+    typeof v.id === "string" &&
+    typeof v.slug === "string" &&
+    (v.external_id === null || v.external_id === undefined || typeof v.external_id === "string")
+  );
 }
 
 interface AuditLogListWire {
@@ -70,6 +87,7 @@ export class UserboxClient {
     query?: Record<string, QueryValue>;
     body?: unknown;
     validate?: (body: unknown) => body is T;
+    onStatus?: (status: number) => void;
   }): Promise<T> {
     return request<T>({
       apiKey: this.apiKey,
@@ -80,6 +98,7 @@ export class UserboxClient {
       query: args.query,
       body: args.body,
       validate: args.validate,
+      onStatus: args.onStatus,
     });
   }
 
@@ -109,6 +128,44 @@ export class UserboxClient {
       method: "GET",
       path: `/v1/workspaces/${encodeURIComponent(workspaceId)}`,
     });
+  }
+
+  /**
+   * Create the workspace for a new customer and make `ownerUserId` its first
+   * member with `ownerRole`, in one call. Needs an API key with the
+   * `workspaces:write` scope.
+   *
+   * Safe to retry: with the same `externalId`, owner and role it returns the
+   * existing workspace with `created: false`.
+   *
+   * Throws `UserboxConflictError` (`WS_EXTERNAL_ID_CONFLICT`,
+   * `WS_SLUG_CONFLICT`; `existingWorkspaceId` when that workspace is in the
+   * key's environment), `UserboxNotFoundError` (`USER_NOT_FOUND`,
+   * `ROLE_NOT_FOUND`) and `UserboxAuthError` (missing scope).
+   */
+  async createWorkspace(args: CreateWorkspaceArgs): Promise<CreatedWorkspace> {
+    let status = 201;
+    const wire = await this._request<CreateWorkspaceWire>({
+      method: "POST",
+      path: "/v1/workspaces",
+      body: {
+        name: args.name,
+        ...(args.slug !== undefined ? { slug: args.slug } : {}),
+        ...(args.externalId !== undefined ? { external_id: args.externalId } : {}),
+        owner: { user_id: args.ownerUserId, role: args.ownerRole },
+      },
+      validate: isCreateWorkspaceShape,
+      onStatus: (s) => {
+        status = s;
+      },
+    });
+    return {
+      id: wire.id,
+      slug: wire.slug,
+      externalId: wire.external_id ?? null,
+      // 201 creates; 200 is an identical retry that returned the existing workspace.
+      created: status === 201 && wire.created !== false,
+    };
   }
 
   async getUserMemberships(args: GetUserMembershipsArgs): Promise<MembershipPage> {

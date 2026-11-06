@@ -1,4 +1,4 @@
-import { UserboxError } from "../errors";
+import { UserboxConfigError } from "../errors";
 
 /**
  * Environment variables the server helpers read when an option is omitted.
@@ -33,7 +33,7 @@ export function requireSetting(
 ): string {
   const value = option !== undefined && option.trim() !== "" ? option.trim() : fromEnv(names);
   if (value === undefined) {
-    throw new UserboxError({
+    throw new UserboxConfigError({
       status: 0,
       code: "CONFIG_ERROR",
       message: `Missing ${what}: pass it as an option or set ${names.join(" or ")}`,

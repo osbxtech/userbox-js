@@ -1,5 +1,5 @@
 import type { webcrypto } from "node:crypto";
-import { UserboxError } from "../errors";
+import { UserboxAuthError, UserboxError, UserboxNetworkError } from "../errors";
 import { normaliseBaseUrl } from "../http";
 import { ENV, requireSetting } from "./env";
 import { isFrameworkControlFlow, report, type ErrorReporter } from "./report";
@@ -65,7 +65,7 @@ const QUIET_BY_DEFAULT: ReadonlySet<string> = new Set([
 ]);
 
 function reject(code: string, message: string): never {
-  throw new UserboxError({ status: 401, code, message });
+  throw new UserboxAuthError({ status: 401, code, message });
 }
 
 // ---------------------------------------------------------------- base64url
@@ -143,7 +143,7 @@ async function fetchJwks(url: string): Promise<RsaJwk[]> {
     });
   } catch (err) {
     if (isFrameworkControlFlow(err)) throw err;
-    throw new UserboxError({
+    throw new UserboxNetworkError({
       status: 0,
       code: "JWKS_UNAVAILABLE",
       message: `JWKS fetch failed: ${err instanceof Error ? err.name : "network error"}`,

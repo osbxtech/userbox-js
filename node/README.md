@@ -33,6 +33,7 @@ Zero runtime dependencies. The SDK uses the global `fetch`, `URL`, `Headers` and
 - A Userbox **API key** with the scopes you need:
   - `users:read` for `getUser(...)`
   - `workspaces:read` for `getWorkspace(...)`
+  - `workspaces:write` for `createWorkspace(...)`
   - `memberships:read` for `getUserMemberships(...)`
   - `access:check` for `can(...)` and `getUserPermissions(...)`
   - For `getAuditLogs(...)` you need a JWT, **not** an API key (see [JWT-bearing client](#jwt-bearing-client))
@@ -170,7 +171,7 @@ Trailing slashes on `baseUrl` are tolerated. The default `baseUrl` is the future
 
 ---
 
-## All six methods
+## All seven methods
 
 ```ts
 // 1. Identity — GET /v1/users/{id}
@@ -180,6 +181,17 @@ const user = await client.getUser("01HX…");
 // 2. Workspace — GET /v1/workspaces/{id}
 const workspace = await client.getWorkspace("01HY…");
 // → WorkspaceResponse { id, name, slug, status, ... }
+
+// 2b. Workspace for a new customer — POST /v1/workspaces (scope workspaces:write)
+//     Creates the workspace and its first member in one call. Safe to retry:
+//     the same externalId, owner and role return the existing workspace.
+const ws = await client.createWorkspace({
+  name: "Acme Inc",
+  externalId: company.id,          // your own id for the customer
+  ownerUserId: "01HX…",            // Userbox user id of the first member
+  ownerRole: "admin",              // a role from the environment catalogue
+});
+// → { id, slug, externalId, created }   created: false on an identical retry
 
 // 3. Membership listing — GET /v1/memberships?user_id=…
 const page = await client.getUserMemberships({
@@ -220,24 +232,29 @@ Method argument keys are camelCase (`perPage`, `targetType`, `userId`). The SDK 
 
 ## Error handling
 
-Every non-2xx HTTP response and every `fetch` rejection surfaces as a thrown `UserboxError`. No other error type comes out of the SDK.
+Every non-2xx HTTP response and every `fetch` rejection surfaces as a thrown `UserboxError`. It is the base class of the shared taxonomy, so `instanceof UserboxError` catches all of them:
+
+| Class | When |
+|-------|------|
+| `UserboxAuthError` | 401, 403 (`INSUFFICIENT_SCOPE`, invalid key or token) |
+| `UserboxNotFoundError` | 404 (`USER_NOT_FOUND`, `ROLE_NOT_FOUND`, …) |
+| `UserboxConflictError` | 409 (`WS_EXTERNAL_ID_CONFLICT`, `WS_SLUG_CONFLICT`; `existingWorkspaceId` when that workspace is in the key's environment) |
+| `UserboxRateLimitError` | 429 |
+| `UserboxServerError` | 5xx |
+| `UserboxNetworkError` | `fetch` rejected (status 0) |
+| `UserboxConfigError` | missing API key or tenant id (status 0) |
+| `UserboxError` | anything else: 400, 422, an unexpected response shape |
 
 ```ts
-import { UserboxClient, UserboxError } from "@userbox/node";
+import { UserboxClient, UserboxConflictError, UserboxError } from "@userbox/node";
 
 try {
-  await client.can({ userId, workspaceId, permission });
+  await client.createWorkspace({ name, externalId, ownerUserId, ownerRole: "admin" });
 } catch (err) {
-  if (err instanceof UserboxError) {
-    if (err.status === 0) {
-      // Network failure (DNS, connection reset, abort)
-    } else if (err.status === 422 && err.code === "VALIDATION_ERROR") {
-      // Bad input — fix your call
-    } else if (err.status === 403) {
-      // INSUFFICIENT_SCOPE (API key) or INSUFFICIENT_PERMISSION (JWT)
-    } else {
-      // Some other platform rejection
-    }
+  if (err instanceof UserboxConflictError && err.existingWorkspaceId) {
+    // This externalId already belongs to another owner: link to err.existingWorkspaceId
+  } else if (err instanceof UserboxError) {
+    // err.status, err.code, err.message
   } else {
     throw err;
   }

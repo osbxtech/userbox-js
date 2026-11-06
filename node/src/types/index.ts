@@ -1,7 +1,7 @@
 export type { UserboxClientConfig } from "./client-config";
 export type { CanArgs, GetUserPermissionsArgs } from "./access";
 export type { UserResponse } from "./user";
-export type { WorkspaceResponse } from "./workspace";
+export type { WorkspaceResponse, CreateWorkspaceArgs, CreatedWorkspace } from "./workspace";
 export type {
   MembershipResponse,
   MembershipPage,
