@@ -24,11 +24,6 @@ export interface Permission {
   type: "internal" | "external";
 }
 
-export interface Role {
-  id: string;
-  name: string;
-}
-
 export interface AuthSettings {
   allowed_redirect_domains: string[] | null;
   allow_self_signup: boolean;
@@ -148,14 +143,6 @@ export function createPermission(s: Session, env: Environment, key: string): Pro
   return s.request<Permission>("/v1/permissions", { method: "POST", envId: env.id, body: { key, name: key } });
 }
 
-/** @deprecated Workspace-scoped roles; `dev seed` moves to the catalogue next. */
-export async function listRoles(s: Session, env: Environment, workspaceId: string): Promise<Role[]> {
-  const res = await s.request<{ items: Role[] }>(`/v1/workspaces/${workspaceId}/roles?limit=200`, {
-    envId: env.id,
-  });
-  return res.items;
-}
-
 export interface Membership {
   id: string;
   user_id: string | null;
@@ -175,6 +162,7 @@ export function inviteMember(s: Session, workspaceId: string, email: string): Pr
   return s.request<Membership>("/v1/memberships", { method: "POST", body: { email, workspace_id: workspaceId } });
 }
 
+/** Give a membership a catalogue role (`GET /v1/roles` id). Idempotent. */
 export function assignRole(s: Session, membershipId: string, roleId: string): Promise<unknown> {
   return s.request(`/v1/memberships/${membershipId}/roles`, { method: "POST", body: { role_id: roleId } });
 }

@@ -11,7 +11,7 @@ import { saveCredentials } from "../src/credentials.js";
 import type { Output } from "../src/output.js";
 
 const API = "https://api.test.example.dev";
-const flags: Flags = { json: true, yes: false, force: false, skipInstall: false, invite: [], goLive: true };
+const flags: Flags = { json: true, yes: false, force: false, skipInstall: false, invite: [], goLive: true, workspacesWrite: false };
 
 const environments = [
   { id: "env-prod", name: "Production", slug: "production", type: "production", isDefault: true },
@@ -128,5 +128,27 @@ describe("init --env", () => {
       redirectDomainEnvironment: { id: "env-prod" },
     });
     expect(readFileSync(join(dir, ".env.local"), "utf8")).toContain("USERBOX_API_KEY=");
+  });
+
+  it("creates the key without workspaces:write by default, and never asks an agent", async () => {
+    nextApp();
+    const { out, result } = capture();
+    await init({ ...flags, goLive: false, skipInstall: true }, out);
+
+    expect(calls.find((c) => c.url.endsWith("/v1/api-keys"))?.body).toMatchObject({
+      scopes: ["access:check", "memberships:read", "workspaces:read"],
+    });
+    expect(result()).toMatchObject({ apiKeyScopes: ["access:check", "memberships:read", "workspaces:read"] });
+  });
+
+  it("adds workspaces:write to the key with --workspaces-write", async () => {
+    nextApp();
+    const { out, result } = capture();
+    await init({ ...flags, goLive: false, skipInstall: true, workspacesWrite: true }, out);
+
+    expect(calls.find((c) => c.url.endsWith("/v1/api-keys"))?.body).toMatchObject({
+      scopes: ["access:check", "memberships:read", "workspaces:read", "workspaces:write"],
+    });
+    expect(result()).toMatchObject({ apiKeyScopes: expect.arrayContaining(["workspaces:write"]) });
   });
 });

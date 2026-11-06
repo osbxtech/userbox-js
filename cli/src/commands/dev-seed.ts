@@ -8,8 +8,8 @@ import {
   assignRole,
   createWorkspace,
   inviteMember,
+  listCatalogueRoles,
   listMemberships,
-  listRoles,
   listWorkspaces,
   resolveEnvironment,
 } from "../userbox.js";
@@ -51,10 +51,11 @@ export async function devSeed(flags: Flags, out: Output): Promise<void> {
       out.warn("Skipped the userbox.yaml sync: nothing was removed from the roles.");
     }
   } else {
-    out.warn("No userbox.yaml: the workspace has no roles yet. Add one and run `userbox apply`.");
+    out.warn("No userbox.yaml: using the roles already in the environment's catalogue.");
   }
 
-  const roles = new Map((await listRoles(session, env, ws.id)).map((r) => [r.name, r.id]));
+  // Roles come from the environment's catalogue; a workspace has none of its own.
+  const roles = new Map((await listCatalogueRoles(session, env)).map((r) => [r.name.toLowerCase(), r.id]));
   const memberships = await listMemberships(session, ws.id);
   const mine = memberships.find((m) => m.user_id === session.userId);
   let adminAssigned = false;
@@ -64,7 +65,7 @@ export async function devSeed(flags: Flags, out: Output): Promise<void> {
     adminAssigned = true;
     out.step(`You (${session.email}) have the admin role in ${SLUG}`);
   } else if (!adminRole) {
-    out.warn("No `admin` role in userbox.yaml, so your membership has no role.");
+    out.warn("No `admin` role in the environment's catalogue (declare it in userbox.yaml), so your membership has no role.");
   } else {
     out.warn("You have no membership in the dev workspace; it was created by another user.");
   }
@@ -75,7 +76,7 @@ export async function devSeed(flags: Flags, out: Output): Promise<void> {
     if (!email) continue;
     const already = memberships.find((m) => m.email?.toLowerCase() === email.toLowerCase());
     const membership = already ?? (await inviteMember(session, ws.id, email));
-    const roleId = roles.get(roleName);
+    const roleId = roles.get(roleName.toLowerCase());
     if (roleId) await assignRole(session, membership.id, roleId);
     else out.warn(`No role "${roleName}" for ${email}; invited without a role.`);
     invited.push({ email, role: roleId ? roleName : null });
