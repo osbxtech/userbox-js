@@ -1,6 +1,7 @@
 # Releasing
 
-This is the public release procedure for `@userbox/react` and `@userbox/node`.
+This is the public release procedure for `@userbox/react`, `@userbox/node` and
+`@userbox/cli`.
 Each package is released on its own: one package, one version, one run.
 
 ## Rules
@@ -44,6 +45,19 @@ Each package is released on its own: one package, one version, one run.
 5. **Tag.** The workflow creates the annotated `<folder>-v<version>` tag on the
    released commit and a GitHub pre-release with the changelog section. Release
    tags cannot be moved or deleted once created (repository ruleset).
+6. **Move `latest`.** The publish credential can only publish, so the workflow
+   cannot move `latest`, and until it moves, an install without a tag
+   (`npx @userbox/cli`, `npm install @userbox/node`) gets an older version.
+   When `latest` is not the released version, the tag job's summary prints the
+   command and the run shows a warning. A maintainer runs it with 2FA:
+
+   ```bash
+   npm dist-tag add @userbox/<package>@<version> latest
+   ```
+
+   Then logs out (`npm logout`), so no registry token is left on the machine.
+   This is the one registry write done outside the workflow: it changes a
+   pointer and publishes nothing.
 
 ## When something fails
 
@@ -79,5 +93,4 @@ first time, a maintainer publishes a content-free placeholder
 (`0.0.0-bootstrap.0`, no code) from a clean directory, attaches the trusted
 publisher, and then runs the steps above for the real first version, which
 therefore carries provenance. The placeholder is deprecated, and `latest` is
-moved to the real version; the tag job's summary prints that command while
-`latest` still points to the placeholder.
+moved to the real version as in step 6.
