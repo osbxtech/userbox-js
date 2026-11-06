@@ -33,6 +33,9 @@ Options
                      one, which is production for a new tenant. The redirect
                      domain always goes to the default environment: hosted
                      sign-in reads only that one for now
+  --workspaces-write init: let the API key create workspaces (scope
+                     workspaces:write), for a backend that creates a
+                     workspace per customer with createWorkspace()
   --go-live          doctor: also check the production environment for
                      localhost redirect domains and the dev workspace
   --api-url <url>    login: the Userbox API (default https://api.test.userbox.app)
@@ -53,6 +56,8 @@ export interface Flags {
   /** `--env`: an environment slug, name or type; the default environment when absent. */
   env?: string;
   goLive: boolean;
+  /** `--workspaces-write`: init adds the `workspaces:write` scope to the API key. */
+  workspacesWrite: boolean;
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -70,6 +75,7 @@ async function main(argv: string[]): Promise<number> {
       invite: { type: "string", multiple: true, default: [] },
       env: { type: "string" },
       "go-live": { type: "boolean", default: false },
+      "workspaces-write": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
     },
@@ -84,6 +90,7 @@ async function main(argv: string[]): Promise<number> {
     invite: values.invite,
     env: values.env,
     goLive: values["go-live"],
+    workspacesWrite: values["workspaces-write"],
   };
   if (values.version) {
     process.stdout.write(`${VERSION}\n`);

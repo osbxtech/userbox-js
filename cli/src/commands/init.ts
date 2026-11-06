@@ -7,11 +7,21 @@ import { Session } from "../api.js";
 import type { Flags } from "../bin.js";
 import { ENV_KEYS, mergeEnv, parseEnv } from "../envfile.js";
 import { CliError, type Output } from "../output.js";
+import { confirm } from "../prompt.js";
 import { detectNextProject, installCommand } from "../project.js";
 import { scaffold } from "../scaffold.js";
 import { createApiKey, ensureRedirectDomain, listEnvironments, pickEnvironment } from "../userbox.js";
 
 export const KEY_SCOPES = ["access:check", "memberships:read", "workspaces:read"];
+/** Opt-in: lets the backend call `createWorkspace()` for each new customer. */
+export const WORKSPACES_WRITE = "workspaces:write";
+
+/** `--workspaces-write`, or the human's answer at a terminal; never asked of an agent (`--json`, no TTY). */
+async function wantsWorkspacesWrite(flags: Flags): Promise<boolean> {
+  if (flags.workspacesWrite) return true;
+  if (flags.json || !process.stdin.isTTY || !process.stdout.isTTY) return false;
+  return confirm("Will your backend create a workspace per customer? (adds the workspaces:write scope to the API key)");
+}
 const SDKS = ["@userbox/react@alpha", "@userbox/node@alpha"];
 
 function ensureGitignored(root: string): boolean {
@@ -73,11 +83,15 @@ export async function init(flags: Flags, out: Output): Promise<void> {
     APP_ORIGIN: origin,
   };
   let keyCreated = false;
+  let keyScopes: string[] | null = null;
   if (flags.force || !current.get("USERBOX_API_KEY")) {
     const date = new Date().toISOString().slice(0, 10);
-    values.USERBOX_API_KEY = await createApiKey(session, env, `cli ${hostname()} ${date}`, KEY_SCOPES);
+    keyScopes = (await wantsWorkspacesWrite(flags)) ? [...KEY_SCOPES, WORKSPACES_WRITE] : KEY_SCOPES;
+    values.USERBOX_API_KEY = await createApiKey(session, env, `cli ${hostname()} ${date}`, keyScopes);
     keyCreated = true;
-    out.step(`Created an API key with scopes ${KEY_SCOPES.join(", ")}`);
+    out.step(`Created an API key with scopes ${keyScopes.join(", ")}`);
+  } else if (flags.workspacesWrite) {
+    out.warn(".env.local keeps its existing USERBOX_API_KEY, so --workspaces-write had no effect; run with --force for a new key.");
   }
   const merged = mergeEnv(existing, values, flags.force ? new Set(ENV_KEYS) : new Set());
   writeFileSync(envPath, merged.text, { mode: 0o600 });
@@ -121,6 +135,7 @@ export async function init(flags: Flags, out: Output): Promise<void> {
       redirectDomainEnvironment: { id: signInEnv.id, name: signInEnv.name, type: signInEnv.type },
       envFile: { path: ".env.local", added: merged.added, replaced: merged.replaced, kept: merged.kept },
       apiKeyCreated: keyCreated,
+      apiKeyScopes: keyScopes,
       sdksInstalled: installed,
       files,
       next: flags.env

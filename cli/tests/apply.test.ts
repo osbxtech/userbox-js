@@ -11,7 +11,7 @@ import { type Plan, planApply } from "../src/manifest.js";
 import type { Output } from "../src/output.js";
 
 const API = "https://api.test.example.dev";
-const flags: Flags = { json: true, yes: true, force: false, skipInstall: false, invite: [], goLive: false };
+const flags: Flags = { json: true, yes: true, force: false, skipInstall: false, invite: [], goLive: false, workspacesWrite: false };
 
 function syncWith(plan: Plan): Sync {
   return { manifest: { permissions: [], roles: {} }, plan, remote: new Map(), update: [], createdPermissions: plan.createPermissions };
