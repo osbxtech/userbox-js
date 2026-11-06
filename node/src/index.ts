@@ -1,5 +1,14 @@
 export { UserboxClient } from "./client";
-export { UserboxError } from "./errors";
+export {
+  UserboxError,
+  UserboxAuthError,
+  UserboxNotFoundError,
+  UserboxConflictError,
+  UserboxRateLimitError,
+  UserboxServerError,
+  UserboxNetworkError,
+  UserboxConfigError,
+} from "./errors";
 export {
   verifyRequest,
   verifyAccessToken,
@@ -15,6 +24,8 @@ export type {
   GetUserPermissionsArgs,
   UserResponse,
   WorkspaceResponse,
+  CreateWorkspaceArgs,
+  CreatedWorkspace,
   MembershipResponse,
   MembershipPage,
   GetUserMembershipsArgs,

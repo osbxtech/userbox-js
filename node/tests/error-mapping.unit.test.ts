@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UserboxClient } from "../src/client";
-import { UserboxError } from "../src/errors";
+import {
+  UserboxAuthError,
+  UserboxConflictError,
+  UserboxError,
+  UserboxNetworkError,
+  UserboxNotFoundError,
+  UserboxRateLimitError,
+  UserboxServerError,
+} from "../src/errors";
 
 interface RawClient {
   _request: <T>(args: { method: string; path: string; body?: unknown }) => Promise<T>;
@@ -48,7 +56,7 @@ describe("request — error mapping", () => {
     );
     const client = makeClient();
     await expect(client._request({ method: "GET", path: "/v1/workspaces/x" })).rejects.toMatchObject({
-      name: "UserboxError",
+      name: "UserboxAuthError",
       status: 403,
       code: "INSUFFICIENT_SCOPE",
       message: "API key lacks workspaces:read",
@@ -152,8 +160,41 @@ describe("request — error mapping", () => {
     );
     const client = makeClient();
     const err = await client._request({ method: "GET", path: "/v1/x" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UserboxNotFoundError);
     expect(err).toBeInstanceOf(UserboxError);
     expect(err).toBeInstanceOf(Error);
-    expect((err as Error).name).toBe("UserboxError");
+    expect((err as Error).name).toBe("UserboxNotFoundError");
+  });
+
+  it.each([
+    [401, UserboxAuthError],
+    [403, UserboxAuthError],
+    [404, UserboxNotFoundError],
+    [409, UserboxConflictError],
+    [429, UserboxRateLimitError],
+    [500, UserboxServerError],
+    [503, UserboxServerError],
+  ])("maps HTTP %i to its taxonomy class", async (status, cls) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ code: "X", error: "x" }), { status }),
+    );
+    const err = await makeClient()._request({ method: "GET", path: "/v1/x" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(cls);
+    expect((err as Error).name).toBe(cls.name);
+  });
+
+  it.each([400, 422])("keeps HTTP %i a plain UserboxError", async (status) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ code: "VALIDATION_ERROR", error: "bad" }), { status }),
+    );
+    const err = await makeClient()._request({ method: "GET", path: "/v1/x" }).catch((e: unknown) => e);
+    expect((err as Error).constructor).toBe(UserboxError);
+  });
+
+  it("maps a rejected fetch to UserboxNetworkError", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("fetch failed"));
+    const err = await makeClient()._request({ method: "GET", path: "/v1/x" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UserboxNetworkError);
+    expect(err).toMatchObject({ status: 0, code: "NETWORK_ERROR" });
   });
 });

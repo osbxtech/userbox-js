@@ -1,4 +1,4 @@
-import { UserboxError } from "./errors";
+import { UserboxError, UserboxNetworkError, errorForStatus } from "./errors";
 import { isFrameworkControlFlow } from "./server/report";
 
 export const DEFAULT_BASE_URL = "https://api.userbox.app";
@@ -49,7 +49,7 @@ export function buildHeaders({ apiKey, tenantId, hasBody }: BuildHeadersArgs): R
   return headers;
 }
 
-export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface RequestArgs<T = unknown> {
   apiKey: string;
@@ -66,6 +66,8 @@ export interface RequestArgs<T = unknown> {
    * and the actual HTTP status.
    */
   validate?: (body: unknown) => body is T;
+  /** Called with the 2xx status before the body is returned. */
+  onStatus?: (status: number) => void;
 }
 
 interface PlatformErrorBody {
@@ -110,7 +112,7 @@ export async function request<T>(args: RequestArgs<T>): Promise<T> {
     // A Next.js prerender bail-out thrown by its patched fetch is not a network error.
     if (isFrameworkControlFlow(err)) throw err;
     const original = err instanceof Error ? err.message : "Network request failed";
-    throw new UserboxError({
+    throw new UserboxNetworkError({
       status: 0,
       code: "NETWORK_ERROR",
       message: original,
@@ -120,6 +122,7 @@ export async function request<T>(args: RequestArgs<T>): Promise<T> {
   const status = response.status;
 
   if (status >= 200 && status < 300) {
+    args.onStatus?.(status);
     if (status === 204) {
       return undefined as T;
     }
@@ -148,18 +151,10 @@ export async function request<T>(args: RequestArgs<T>): Promise<T> {
 
   const contract = extractErrorContract(body);
   if (contract) {
-    throw new UserboxError({
-      status,
-      code: contract.code,
-      message: contract.message,
-    });
+    throw errorForStatus({ status, code: contract.code, message: contract.message }, body);
   }
 
-  throw new UserboxError({
-    status,
-    code: "UNKNOWN_ERROR",
-    message: statusMessage(status, response.statusText),
-  });
+  throw errorForStatus({ status, code: "UNKNOWN_ERROR", message: statusMessage(status, response.statusText) });
 }
 
 /**
