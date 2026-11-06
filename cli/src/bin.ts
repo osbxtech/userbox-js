@@ -6,8 +6,8 @@ import { doctor } from "./commands/doctor.js";
 import { init } from "./commands/init.js";
 import { login, logout, whoami } from "./commands/login.js";
 import { CliError, createOutput, printError } from "./output.js";
-
-const VERSION = "0.1.0-alpha.2";
+// Inlined by the bundler, so `--version` always matches the published package.
+import { version as VERSION } from "../package.json";
 
 const HELP = `userbox — set up Userbox in your app
 
