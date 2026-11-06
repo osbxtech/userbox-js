@@ -140,6 +140,9 @@ jobs:
             tar -tzf "$TARBALL_PATH"
             printf '```\n'
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$latest" != "$VERSION" ]; then
+            printf '::warning::latest points to %s, not %s: see the run summary\n' "${latest:-nothing}" "$VERSION"
+          fi
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -268,16 +271,19 @@ jobs:
           gh release create "${PACKAGE}-v${VERSION}" --repo "$REPO" --verify-tag --prerelease \
             --title "$PACKAGE_NAME $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
 
-      - name: Summary (and the `latest` command while latest is the placeholder)
+      # The OIDC credential only publishes, so CI cannot move `latest`. Until a
+      # maintainer does (2FA), `npx <name>` without a tag installs an older version.
+      - name: Summary (and the `latest` command while latest lags behind)
         run: |
-          latest="$(npm view "$PACKAGE_NAME" dist-tags.latest 2>/dev/null || true)"
+          latest="$(npm view "$PACKAGE_NAME" dist-tags.latest --prefer-online 2>/dev/null || true)"
           {
             printf '## Released %s@%s\n\n' "$PACKAGE_NAME" "$VERSION"
             printf 'Tag `%s-v%s` on `%s`.\n\n' "$PACKAGE" "$VERSION" "$RELEASED_SHA"
-            case "$latest" in
-              ""|0.0.0-bootstrap.*)
-                printf '`latest` points to `%s`. A maintainer moves it (2FA):\n\n' "${latest:-nothing}"
-                printf '```\nnpm dist-tag add %s@%s latest\n```\n' "$PACKAGE_NAME" "$VERSION"
-                ;;
-            esac
+            if [ "$latest" != "$VERSION" ]; then
+              printf '`latest` points to `%s`. A maintainer moves it (2FA):\n\n' "${latest:-nothing}"
+              printf '```\nnpm dist-tag add %s@%s latest\n```\n' "$PACKAGE_NAME" "$VERSION"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$latest" != "$VERSION" ]; then
+            printf '::warning::latest points to %s, not %s: see the run summary\n' "${latest:-nothing}" "$VERSION"
+          fi
