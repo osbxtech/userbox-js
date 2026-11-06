@@ -2,6 +2,24 @@
 
 All notable changes to `@userbox/node` are documented in this file.
 
+## [1.0.0-alpha.2] — 2026-11-06
+
+### Added
+- `createWorkspace({ name, externalId?, slug?, ownerUserId, ownerRole })`:
+  creates a customer's workspace and its first member in one call
+  (`POST /v1/workspaces`, scope `workspaces:write`) and returns
+  `{ id, slug, externalId, created }`. An identical retry (same `externalId`,
+  owner and role) returns the existing workspace with `created: false`.
+- The shared error taxonomy, all subclasses of `UserboxError`:
+  `UserboxAuthError` (401, 403), `UserboxNotFoundError` (404),
+  `UserboxConflictError` (409, with `existingWorkspaceId` when the existing
+  workspace is in the key's environment), `UserboxRateLimitError` (429),
+  `UserboxServerError` (5xx), `UserboxNetworkError` and `UserboxConfigError`.
+
+### Changed
+- `err.name` is the subclass name (for example `UserboxAuthError`).
+  `instanceof UserboxError` keeps matching every SDK error.
+
 ## [1.0.0-alpha.1] — 2026-11-04
 
 ### Added

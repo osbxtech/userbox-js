@@ -1,6 +1,6 @@
 {
   "name": "@userbox/node",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "description": "Official TypeScript SDK for the Userbox identity and authorization platform.",
   "type": "module",
   "sideEffects": false,
