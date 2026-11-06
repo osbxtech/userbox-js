@@ -7,24 +7,25 @@ import { type Manifest, type Plan, parseManifest, planApply, planIsEmpty, planRe
 import { CliError, type Output } from "../output.js";
 import { confirm } from "../prompt.js";
 import {
+  type CatalogueRole,
   type Environment,
-  type Workspace,
+  createCatalogueRole,
   createPermission,
-  createRole,
-  grantRolePermission,
+  listCatalogueRoles,
   listExternalPermissions,
-  listRolePermissions,
-  listRoles,
-  listWorkspaces,
+  listRoleGrants,
+  replaceRoleGrants,
   resolveEnvironment,
-  revokeRolePermission,
+  updateCatalogueRole,
 } from "../userbox.js";
 
-// Permissions live in the environment; roles live in each workspace. `apply`
-// creates the permissions once and syncs the roles into every active
-// workspace of the default environment (or the one named by `--env`).
+// Permissions and roles both live in the environment: roles form one
+// catalogue (`/v1/roles`) that every workspace uses. `apply` creates the
+// missing permissions, then makes each role declared in userbox.yaml hold
+// exactly its listed permissions. Roles that exist only in the console are
+// reported and kept; `apply` never deletes a role.
 
-type Sync = Awaited<ReturnType<typeof syncManifest>>;
+export type Sync = Awaited<ReturnType<typeof syncManifest>>;
 
 function isInteractive(flags: Flags): boolean {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY) && !flags.json;
@@ -37,7 +38,7 @@ function isInteractive(flags: Flags): boolean {
  * skip it, and without a terminal the command stops with NEEDS_HUMAN.
  */
 export async function confirmRevokes(sync: Sync, flags: Flags, command: string): Promise<boolean> {
-  if (!sync.plans.some((p) => planRevokes(p.plan))) return true;
+  if (!planRevokes(sync.plan)) return true;
   const lines = describe(sync).filter((l) => l.startsWith("  - "));
   if (!isInteractive(flags)) {
     throw new CliError(
@@ -62,99 +63,114 @@ export function loadManifest(root: string): Manifest {
   return parseManifest(readFileSync(path, "utf8"));
 }
 
-interface WorkspacePlan {
-  workspace: Workspace;
-  plan: Plan;
-  roleIds: Map<string, string>;
+interface RemoteRole {
+  role: CatalogueRole;
+  /** External permission keys the role grants now. */
+  external: string[];
+  /** Internal (platform) permission keys: not in userbox.yaml, always kept. */
+  internal: string[];
 }
 
-async function workspacePlan(s: Session, env: Environment, manifest: Manifest, ws: Workspace, envPerms: string[]) {
-  const roles = await listRoles(s, env, ws.id);
-  const remoteRoles: Record<string, string[]> = {};
-  const roleIds = new Map<string, string>();
-  for (const role of roles) {
-    roleIds.set(role.name, role.id);
-    const perms = await listRolePermissions(s, env, ws.id, role.id);
-    remoteRoles[role.name] = perms.filter((p) => p.type === "external").map((p) => p.key);
-  }
-  return { workspace: ws, plan: planApply(manifest, { permissions: envPerms, roles: remoteRoles }), roleIds };
-}
+/** Role names are unique per environment, compared case-insensitively. */
+const norm = (name: string) => name.toLowerCase();
 
-/** Make the workspace's roles match the manifest. Permissions must already exist. */
-export async function executeRoles(
-  s: Session,
-  env: Environment,
-  wp: WorkspacePlan,
-  permissionIds: Map<string, string>,
-): Promise<void> {
-  const ids = new Map(wp.roleIds);
-  for (const name of wp.plan.createRoles) {
-    ids.set(name, (await createRole(s, env, wp.workspace.id, name)).id);
-  }
-  for (const { role, permission } of wp.plan.grant) {
-    await grantRolePermission(s, env, wp.workspace.id, ids.get(role)!, permissionIds.get(permission)!);
-  }
-  for (const { role, permission } of wp.plan.revoke) {
-    const pid = permissionIds.get(permission);
-    if (pid) await revokeRolePermission(s, env, wp.workspace.id, ids.get(role)!, pid);
-  }
-}
-
-export async function syncManifest(
-  s: Session,
-  env: Environment,
-  manifest: Manifest,
-  workspaces: Workspace[],
-): Promise<{ createdPermissions: string[]; plans: WorkspacePlan[]; permissionIds: Map<string, string> }> {
+export async function syncManifest(s: Session, env: Environment, manifest: Manifest) {
   const existing = await listExternalPermissions(s, env);
   const permissionIds = new Map(existing.map((p) => [p.key, p.id]));
-  const plans: WorkspacePlan[] = [];
-  for (const ws of workspaces) plans.push(await workspacePlan(s, env, manifest, ws, [...permissionIds.keys()]));
-  return { createdPermissions: manifest.permissions.filter((p) => !permissionIds.has(p)), plans, permissionIds };
-}
+  const catalogue = await listCatalogueRoles(s, env);
+  const declared = new Map(Object.keys(manifest.roles).map((name) => [norm(name), name]));
 
-export async function executeSync(
-  s: Session,
-  env: Environment,
-  sync: Awaited<ReturnType<typeof syncManifest>>,
-): Promise<void> {
-  for (const key of sync.createdPermissions) {
-    sync.permissionIds.set(key, (await createPermission(s, env, key)).id);
+  const remote = new Map<string, RemoteRole>();
+  const remoteRoles: Record<string, string[]> = {};
+  const consoleOnly: string[] = [];
+  for (const role of catalogue) {
+    const name = declared.get(norm(role.name));
+    if (name === undefined) {
+      consoleOnly.push(role.name);
+      continue;
+    }
+    const grants = (await listRoleGrants(s, env, role.id)).filter((g) => g.effect === "allow");
+    const entry = {
+      role,
+      external: grants.filter((g) => g.type === "external").map((g) => g.key),
+      internal: grants.filter((g) => g.type === "internal").map((g) => g.key),
+    };
+    remote.set(name, entry);
+    remoteRoles[name] = entry.external;
   }
-  for (const wp of sync.plans) await executeRoles(s, env, wp, sync.permissionIds);
+  const plan: Plan = planApply(manifest, { permissions: [...permissionIds.keys()], roles: remoteRoles });
+  plan.extraRoles = consoleOnly.sort();
+  // Declared roles are owned by userbox.yaml: adopt console roles and match the file's spelling.
+  const update = [...remote.entries()]
+    .filter(([name, r]) => r.role.managed_by !== "apply" || r.role.name !== name)
+    .map(([name]) => name)
+    .sort();
+  return { manifest, plan, remote, update, createdPermissions: plan.createPermissions };
 }
 
-function describe(sync: Sync): string[] {
+export function syncIsEmpty(sync: Sync): boolean {
+  return planIsEmpty(sync.plan) && sync.update.length === 0;
+}
+
+/** Role ids by userbox.yaml name, after `executeSync`. */
+export async function executeSync(s: Session, env: Environment, sync: Sync): Promise<Map<string, string>> {
+  // Permissions first: PUT /v1/roles/{id}/permissions rejects unknown keys.
+  for (const key of sync.createdPermissions) await createPermission(s, env, key);
+  const touched = new Set([...sync.plan.grant, ...sync.plan.revoke].map((g) => g.role));
+  const ids = new Map<string, string>();
+  for (const [name, wanted] of Object.entries(sync.manifest.roles)) {
+    const remote = sync.remote.get(name);
+    let id = remote?.role.id;
+    if (id === undefined) id = (await createCatalogueRole(s, env, name)).id;
+    else if (sync.update.includes(name)) await updateCatalogueRole(s, env, id, name);
+    ids.set(name, id);
+    if (touched.has(name) || (remote === undefined && wanted.length > 0)) {
+      await replaceRoleGrants(s, env, id, [...wanted, ...(remote?.internal ?? [])]);
+    }
+  }
+  return ids;
+}
+
+export function describe(sync: Sync): string[] {
   const lines: string[] = [];
   for (const p of sync.createdPermissions) lines.push(`  + permission ${p}`);
-  for (const { workspace, plan } of sync.plans) {
-    const label = workspace.slug ?? workspace.name;
-    for (const r of plan.createRoles) lines.push(`  + role ${r} in ${label}`);
-    for (const g of plan.grant) lines.push(`  + ${g.role} → ${g.permission} in ${label}`);
-    for (const r of plan.revoke) lines.push(`  - ${r.role} → ${r.permission} in ${label}`);
+  for (const r of sync.plan.createRoles) lines.push(`  + role ${r}`);
+  for (const name of sync.update) {
+    const role = sync.remote.get(name)!.role;
+    const changes = [
+      ...(role.name !== name ? [`renamed from ${role.name}`] : []),
+      ...(role.managed_by !== "apply" ? [`managed by userbox.yaml from now on (was ${role.managed_by})`] : []),
+    ];
+    lines.push(`  ~ role ${name}: ${changes.join("; ")}`);
   }
+  for (const g of sync.plan.grant) lines.push(`  + ${g.role} → ${g.permission}`);
+  for (const r of sync.plan.revoke) lines.push(`  - ${r.role} → ${r.permission}`);
   return lines;
+}
+
+/** Warnings about what `apply` leaves alone. */
+export function keptWarnings(sync: Sync): string[] {
+  const warnings: string[] = [];
+  if (sync.plan.extraPermissions.length > 0) {
+    warnings.push(`Not in userbox.yaml, left as they are: ${sync.plan.extraPermissions.join(", ")}`);
+  }
+  for (const r of sync.plan.extraRoles) warnings.push(`Role ${r} exists only in the console (kept)`);
+  return warnings;
 }
 
 export async function apply(flags: Flags, out: Output): Promise<void> {
   const manifest = loadManifest(process.cwd());
   const session = Session.load();
   const env = await resolveEnvironment(session, flags.env);
-  const workspaces = await listWorkspaces(session, env);
-  if (workspaces.length === 0) {
-    out.warn("No workspaces yet: roles are created per workspace. Run `userbox dev seed` to create one.");
-  }
-  const sync = await syncManifest(session, env, manifest, workspaces);
+  const sync = await syncManifest(session, env, manifest);
   const changes = describe(sync);
-  const extras = new Set(sync.plans.flatMap((p) => p.plan.extraPermissions));
-  if (extras.size > 0) out.warn(`Not in userbox.yaml, left as they are: ${[...extras].join(", ")}`);
-  const empty = sync.createdPermissions.length === 0 && sync.plans.every((p) => planIsEmpty(p.plan));
+  for (const w of keptWarnings(sync)) out.warn(w);
   const summary = {
     environment: { id: env.id, name: env.name, slug: env.slug ?? null, type: env.type },
-    workspaces: workspaces.map((w) => w.slug ?? w.id),
     changes,
+    consoleOnlyRoles: sync.plan.extraRoles,
   };
-  if (empty) {
+  if (syncIsEmpty(sync)) {
     out.done({ ...summary, applied: false, upToDate: true }, ["Up to date: nothing to apply."]);
     return;
   }
