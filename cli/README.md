@@ -24,7 +24,10 @@ Secrets never pass through the model:
 
 - `login` refuses to run without an interactive terminal. If a command fails
   with `NOT_LOGGED_IN`, `SESSION_EXPIRED` or `NEEDS_HUMAN`, ask the human to
-  run `npx @userbox/cli login` in their own terminal.
+  run `npx @userbox/cli login` in their own terminal. `SESSION_EXPIRED` means
+  the API rejected the stored login (expired, revoked or already used). Any
+  other error while refreshing keeps the API's own code and message: report
+  it, a new login will not fix it.
 - `login` fails with `INVALID_CREDENTIALS` for an unknown email, a wrong
   password or an unknown tenant slug alike. The error carries `signup_url`
   (also at the top level of the `--json` document): a founder with no account
@@ -77,6 +80,11 @@ Limits for now:
   reuses a permission that already exists in another environment.
 - `init --env` reuses an existing `USERBOX_API_KEY` in `.env.local` unless you
   pass `--force`, and warns that it may belong to another environment.
+- `init --force` replaces the API key and leaves the replaced one active. At a
+  terminal it asks whether to revoke the replaced key. With `--json` or without
+  a terminal it never revokes: it warns and reports the key in `replacedApiKey`
+  (`id`, `name`, `prefix`, `revoked`). Revoke it in the console once nothing
+  uses it.
 
 Before going live, `npx @userbox/cli doctor --go-live` lists what the
 default flow left in production: `localhost` redirect domains and the `dev`

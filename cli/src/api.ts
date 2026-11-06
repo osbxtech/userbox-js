@@ -68,6 +68,28 @@ export function expiryFrom(tokens: TokenPair): number {
   return Date.now() + (tokens.expires_in ?? 900) * 1000;
 }
 
+/**
+ * Map a failed `/v1/auth/refresh` to a CLI error. Only a refresh token the API
+ * no longer accepts (expired, revoked, or already used: 401
+ * `INVALID_REFRESH_TOKEN`) means the login is over. Any other 4xx keeps the
+ * API's own code and message, so the cause is not hidden behind a re-login.
+ */
+export function refreshError(err: unknown): unknown {
+  if (!(err instanceof ApiError) || err.status < 400 || err.status >= 500) return err;
+  if (err.status === 401 || err.code === "INVALID_REFRESH_TOKEN") {
+    return new CliError(
+      "SESSION_EXPIRED",
+      "the CLI login has expired or was revoked",
+      "Ask the human to run `npx @userbox/cli login` again.",
+    );
+  }
+  return new CliError(
+    err.code,
+    `refreshing the CLI login failed: ${err.message}`,
+    "This is not an expired login. Retry; if it persists, report the code and message.",
+  );
+}
+
 /** An authenticated client bound to the stored CLI login. */
 export class Session {
   private constructor(private creds: Credentials) {}
@@ -117,14 +139,7 @@ export class Session {
       };
       saveCredentials(this.creds);
     } catch (err) {
-      if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
-        throw new CliError(
-          "SESSION_EXPIRED",
-          "the CLI login has expired",
-          "Ask the human to run `npx @userbox/cli login` again.",
-        );
-      }
-      throw err;
+      throw refreshError(err);
     }
   }
 
