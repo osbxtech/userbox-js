@@ -33,6 +33,7 @@ function capture(): { out: Output; result: () => Record<string, unknown> } {
 let dir: string;
 let cwd: string;
 let calls: { url: string; method: string; env: string | null; body?: unknown }[];
+let prodDomains: string[];
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "userbox-doctor-"));
@@ -49,6 +50,7 @@ beforeEach(() => {
     accessExpiresAt: Date.now() + 600_000,
   });
   calls = [];
+  prodDomains = ["localhost", "app.example.dev"];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -61,10 +63,10 @@ beforeEach(() => {
       if (method === "PATCH" && url.includes("/auth-settings")) return json({});
       if (method === "POST" && url.endsWith("/v1/api-keys")) return json({ key: "fake-test-key-not-real" });
       if (url.endsWith("/v1/environments/env-prod/auth-settings")) {
-        return json({ allowed_redirect_domains: ["localhost", "app.example.dev"], allow_self_signup: true });
+        return json({ allowed_redirect_domains: prodDomains, allow_self_signup: true });
       }
       if (url.endsWith("/v1/environments/env-dev/auth-settings")) {
-        return json({ allowed_redirect_domains: ["localhost"], allow_self_signup: true });
+        return json({ allowed_redirect_domains: ["localhost"], allow_self_signup: false });
       }
       if (url.includes("/v1/workspaces?")) {
         return json({ items: [{ id: "ws-dev", name: "Dev workspace", slug: "dev", status: "active" }] });
@@ -96,6 +98,68 @@ describe("doctor --go-live", () => {
     expect(calls.find((c) => c.url.includes("/v1/workspaces?"))?.env).toBe("env-prod");
   });
 
+  it("checks the redirect domain in the environment the project names", async () => {
+    writeFileSync(join(dir, ".env.local"), "NEXT_PUBLIC_USERBOX_ENVIRONMENT=development\nAPP_ORIGIN=http://localhost:3000\n");
+    prodDomains = ["app.example.dev"];
+    const { out, result } = capture();
+    await doctor(flags, out);
+    const doc = result() as { checks: { name: string; status: string; message: string; hint?: string }[]; goLive: unknown };
+    expect(doc.checks.find((c) => c.name === "redirect domain")).toMatchObject({
+      status: "pass",
+      message: "localhost allowed in Development",
+    });
+    expect(calls.some((c) => c.url.endsWith("env-dev/auth-settings"))).toBe(true);
+    // Sign-up settings still come from the default environment.
+    expect(doc.checks.find((c) => c.name === "sign-up")).toMatchObject({ status: "pass" });
+    // SC-005: production without localhost, project on development → no redirect warning.
+    expect(doc.checks.find((c) => c.name === "go-live: redirect domains")).toMatchObject({ status: "pass" });
+  });
+
+  it("says local sign-in is unaffected when production still lists localhost", async () => {
+    writeFileSync(join(dir, ".env.local"), "NEXT_PUBLIC_USERBOX_ENVIRONMENT=development\n");
+    const { out, result } = capture();
+    await doctor(flags, out);
+    const doc = result() as { checks: { name: string; status: string; hint?: string }[] };
+    const redirects = doc.checks.find((c) => c.name === "go-live: redirect domains");
+    expect(redirects?.status).toBe("warn");
+    expect(redirects?.hint).toContain("not affected");
+  });
+
+  it("fails when .env.local names an environment the tenant does not have", async () => {
+    writeFileSync(join(dir, ".env.local"), "NEXT_PUBLIC_USERBOX_ENVIRONMENT=nope\n");
+    const { out, result } = capture();
+    await doctor({ ...flags, goLive: false }, out);
+    const doc = result() as { checks: { name: string; status: string; message: string }[] };
+    expect(doc.checks.find((c) => c.name === "environment")).toMatchObject({ status: "fail" });
+    expect(doc.checks.find((c) => c.name === "redirect domain")?.message).toContain("Production");
+  });
+
+  it("warns when the Providers file does not pass the environment", async () => {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { next: "16.0.0" } }));
+    mkdirSync(join(dir, "app"));
+    writeFileSync(join(dir, "app", "providers.tsx"), "<UserboxProvider tenantSlug=\"acme\">{children}</UserboxProvider>\n");
+    writeFileSync(join(dir, ".env.local"), "NEXT_PUBLIC_USERBOX_ENVIRONMENT=development\n");
+    const { out, result } = capture();
+    await doctor({ ...flags, goLive: false }, out);
+    const doc = result() as { checks: { name: string; status: string; message: string }[] };
+    expect(doc.checks.find((c) => c.name === "environment")).toMatchObject({
+      status: "warn",
+      message: expect.stringContaining("does not pass `environment`"),
+    });
+  });
+
+  it("warns when the installed @userbox/react predates the environment option", async () => {
+    mkdirSync(join(dir, "node_modules", "@userbox", "react"), { recursive: true });
+    writeFileSync(join(dir, "node_modules", "@userbox", "react", "package.json"), JSON.stringify({ version: "1.0.0-alpha.4" }));
+    writeFileSync(join(dir, ".env.local"), "NEXT_PUBLIC_USERBOX_ENVIRONMENT=development\n");
+    const { out, result } = capture();
+    await doctor({ ...flags, goLive: false }, out);
+    const doc = result() as { checks: { name: string; status: string; message: string }[] };
+    expect(doc.checks).toContainEqual(
+      expect.objectContaining({ name: "environment", status: "warn", message: expect.stringContaining("ignores the environment option") }),
+    );
+  });
+
   it("leaves goLive out without the flag", async () => {
     const { out, result } = capture();
     await doctor({ ...flags, goLive: false }, out);
@@ -111,7 +175,7 @@ describe("init --env", () => {
     writeFileSync(join(dir, "app", "layout.tsx"), "export default function L({ children }) { return children; }\n");
   }
 
-  it("creates the key in --env but adds the redirect domain to the default environment", async () => {
+  it("puts the key and the redirect domain in --env, and names it in .env.local", async () => {
     nextApp();
     const warnings: string[] = [];
     const { out, result } = capture();
@@ -119,15 +183,66 @@ describe("init --env", () => {
 
     expect(calls.find((c) => c.url.endsWith("/v1/api-keys"))?.env).toBe("env-dev");
     const patch = calls.find((c) => c.method === "PATCH");
-    expect(patch?.url).toBe(`${API}/v1/environments/env-prod/auth-settings`);
-    expect(patch?.body).toEqual({ allowed_redirect_domains: ["localhost", "app.example.dev", "shop.localhost"] });
-    expect(calls.some((c) => c.url.includes("env-dev/auth-settings"))).toBe(false);
-    expect(warnings).toContainEqual(expect.stringContaining('default environment "Production", not "Development"'));
+    expect(patch?.url).toBe(`${API}/v1/environments/env-dev/auth-settings`);
+    expect(patch?.body).toEqual({ allowed_redirect_domains: ["localhost", "shop.localhost"] });
+    expect(calls.some((c) => c.url.includes("env-prod/auth-settings"))).toBe(false);
+    expect(warnings.join("\n")).not.toContain("default environment");
     expect(result()).toMatchObject({
       environment: { id: "env-dev" },
-      redirectDomainEnvironment: { id: "env-prod" },
+      redirectDomainEnvironment: { id: "env-dev" },
+      namedEnvironment: "development",
     });
-    expect(readFileSync(join(dir, ".env.local"), "utf8")).toContain("USERBOX_API_KEY=");
+    const envFile = readFileSync(join(dir, ".env.local"), "utf8");
+    expect(envFile).toContain("USERBOX_API_KEY=");
+    expect(envFile).toContain("NEXT_PUBLIC_USERBOX_ENVIRONMENT=development");
+    // No tsconfig in this fixture, so the scaffold writes JSX.
+    expect(readFileSync(join(dir, "app", "providers.jsx"), "utf8")).toContain(
+      "environment={process.env.NEXT_PUBLIC_USERBOX_ENVIRONMENT}",
+    );
+  });
+
+  it("without --env keeps the default environment and does not name one", async () => {
+    nextApp();
+    const { out, result } = capture();
+    await init({ ...flags, goLive: false, skipInstall: true }, out);
+
+    // localhost is already in production's list, so there is only the read.
+    expect(calls.some((c) => c.url.endsWith("env-prod/auth-settings"))).toBe(true);
+    expect(calls.some((c) => c.url.includes("env-dev/auth-settings"))).toBe(false);
+    expect(result()).toMatchObject({ redirectDomainEnvironment: { id: "env-prod" }, namedEnvironment: null });
+    expect(readFileSync(join(dir, ".env.local"), "utf8")).not.toContain("NEXT_PUBLIC_USERBOX_ENVIRONMENT");
+  });
+
+  it("warns when .env.local names an environment but the run used the default", async () => {
+    nextApp();
+    writeFileSync(join(dir, ".env.local"), "NEXT_PUBLIC_USERBOX_ENVIRONMENT=development\n");
+    const warnings: string[] = [];
+    const { out } = capture();
+    await init({ ...flags, goLive: false, skipInstall: true }, { ...out, warn: (m) => warnings.push(m) });
+    expect(warnings).toContainEqual(expect.stringContaining('names the environment "development"'));
+  });
+
+  it("updates the environment line on a later --env without --force", async () => {
+    nextApp();
+    writeFileSync(join(dir, ".env.local"), "NEXT_PUBLIC_USERBOX_ENVIRONMENT=staging\nUSERBOX_API_KEY=fake-existing-key\n");
+    const { out } = capture();
+    await init({ ...flags, goLive: false, skipInstall: true, env: "development" }, out);
+    const envFile = readFileSync(join(dir, ".env.local"), "utf8");
+    expect(envFile).toContain("NEXT_PUBLIC_USERBOX_ENVIRONMENT=development");
+    expect(envFile).not.toContain("NEXT_PUBLIC_USERBOX_ENVIRONMENT=staging");
+    expect(envFile).toContain("USERBOX_API_KEY=fake-existing-key");
+  });
+
+  it("asks to add the prop when an older Providers file exists", async () => {
+    nextApp();
+    writeFileSync(
+      join(dir, "app", "providers.tsx"),
+      '"use client";\nimport { UserboxProvider } from "@userbox/react";\nexport function Providers({ children }) { return <UserboxProvider tenantSlug="acme" baseUrl="x" tokenStorage="cookie">{children}</UserboxProvider>; }\n',
+    );
+    const warnings: string[] = [];
+    const { out } = capture();
+    await init({ ...flags, goLive: false, skipInstall: true, env: "development" }, { ...out, warn: (m) => warnings.push(m) });
+    expect(warnings).toContainEqual(expect.stringContaining("predates the environment option"));
   });
 
   it("creates the key without workspaces:write by default, and never asks an agent", async () => {

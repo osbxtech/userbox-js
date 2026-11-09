@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
+  assertValidEnvironment,
   assertValidReturnTo,
   assertValidSlug,
   buildAuthSurfaceUrl,
@@ -112,6 +113,49 @@ describe("assertValidReturnTo", () => {
       throw new Error("expected throw");
     } catch (err) {
       expect(isUserboxError(err)).toBe(true);
+    }
+  });
+});
+
+describe("buildAuthSurfaceUrl environment", () => {
+  const base = {
+    tenantSlug: "acme",
+    baseUrl: "https://api.userbox.app",
+    returnTo: "https://acme.example.test/dashboard",
+    state: "nonce-xyz",
+    flowId: "flow-1",
+  } as const;
+
+  it("adds environment to /login and /signup when given", () => {
+    for (const path of ["/login", "/signup"] as const) {
+      const u = new URL(buildAuthSurfaceUrl({ ...base, path, environment: "development" }));
+      expect(u.searchParams.get("environment")).toBe("development");
+      expect(u.searchParams.get("return_to")).toBe(base.returnTo);
+    }
+  });
+
+  it("leaves the URL unchanged without environment", () => {
+    const withKey = buildAuthSurfaceUrl({ ...base, path: "/login", environment: undefined });
+    const without = buildAuthSurfaceUrl({ ...base, path: "/login" });
+    expect(withKey).toBe(without);
+    expect(new URL(without).searchParams.has("environment")).toBe(false);
+  });
+
+  it("rejects an invalid environment as misconfigured(environment)", () => {
+    for (const bad of ["Development", "dev env", "-dev", "dev-", "", "a".repeat(51)]) {
+      try {
+        assertValidEnvironment(bad);
+        throw new Error(`expected ${bad} to be rejected`);
+      } catch (err) {
+        expect(isUserboxError(err)).toBe(true);
+        expect((err as { field: string }).field).toBe("environment");
+      }
+    }
+  });
+
+  it("accepts environment slugs", () => {
+    for (const ok of ["development", "staging", "dev-1", "a".repeat(50)]) {
+      expect(() => assertValidEnvironment(ok)).not.toThrow();
     }
   });
 });

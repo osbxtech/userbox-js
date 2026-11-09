@@ -8,7 +8,7 @@ import {
 import * as React from "react";
 import { authFailed, misconfigured, type UserboxError } from "../core/errors";
 import { PermissionCache } from "../core/permission-cache";
-import { assertValidSlug } from "../core/redirect";
+import { assertValidEnvironment, assertValidSlug } from "../core/redirect";
 import { request } from "../core/http";
 import {
   RefreshEngine,
@@ -26,6 +26,14 @@ export type UserboxProviderProps = {
   tenantSlug: string;
   baseUrl: string;
   baseAuthUrl?: string;
+  /**
+   * Slug of the tenant environment this app signs in against (for example
+   * `development` on a developer machine). Hosted sign-in then checks the
+   * return address against that environment's allowed redirect domains.
+   * Omit it to use the tenant's default environment. An empty string counts
+   * as omitted, so `process.env.X` can be passed through as is.
+   */
+  environment?: string;
   tokenStorage: "cookie" | "memory";
   refreshUrl?: string;
   refreshThresholdPct?: number;
@@ -49,6 +57,11 @@ function validateConfig(props: UserboxProviderProps): ProviderConfigInternal {
   if (props.baseUrl.endsWith("/")) {
     throw misconfigured("baseUrl", "baseUrl must not have a trailing slash");
   }
+  const environment =
+    props.environment === undefined || props.environment === ""
+      ? undefined
+      : props.environment;
+  assertValidEnvironment(environment);
   if (props.tokenStorage !== "memory" && props.tokenStorage !== "cookie") {
     throw misconfigured("tokenStorage", "tokenStorage must be 'memory' or 'cookie'");
   }
@@ -61,6 +74,7 @@ function validateConfig(props: UserboxProviderProps): ProviderConfigInternal {
     tenantSlug: props.tenantSlug,
     baseUrl: props.baseUrl,
     baseAuthUrl: props.baseAuthUrl,
+    environment,
     tokenStorage: props.tokenStorage,
     refreshUrl,
     refreshThresholdPct: props.refreshThresholdPct ?? DEFAULT_REFRESH_THRESHOLD_PCT,

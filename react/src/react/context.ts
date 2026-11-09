@@ -48,6 +48,7 @@ export type ProviderConfigInternal = Readonly<{
   tenantSlug: string;
   baseUrl: string;
   baseAuthUrl?: string;
+  environment?: string;
   tokenStorage: "memory" | "cookie";
   refreshUrl: string;
   refreshThresholdPct: number;

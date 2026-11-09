@@ -82,4 +82,18 @@ describe("goLiveChecks", () => {
       expect.objectContaining({ name: "go-live: dev workspace", status: "warn", message: expect.stringContaining("ws-dev") }),
     ]);
   });
+
+  it("tells a project on another environment that its local sign-in is not affected", () => {
+    const dev = { id: "env-dev", name: "Development", slug: "development", type: "development", isDefault: false } as const;
+    const [redirects] = goLiveChecks(prod, ["localhost"], [], dev);
+    expect(redirects?.hint).toContain("signs in through Development, so its local sign-in is not affected");
+    expect(redirects?.hint).not.toContain("stops signing in");
+  });
+
+  it("points a project without an environment to init --env", () => {
+    const [redirects] = goLiveChecks(prod, ["localhost"], []);
+    expect(redirects?.hint).toContain("stops signing in");
+    expect(redirects?.hint).toContain("userbox init --env development");
+    expect(redirects?.hint).not.toContain("for now");
+  });
 });

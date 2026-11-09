@@ -214,6 +214,15 @@ Sign-in/sign-up navigation defaults to `https://{slug}.auth.<parent of baseUrl's
 
 - Override the host with the `baseAuthUrl` provider prop for local dev (e.g.
   `http://acme.userbox.localhost:3000`).
+- `environment` (optional provider prop): the slug of the tenant environment
+  this app signs in against, for example `environment="development"` on a
+  developer machine. It is added as `&environment=<slug>`, and hosted sign-in
+  then checks `return_to` against **that** environment's allowed redirect
+  domains instead of the default environment's. This keeps `localhost` out of
+  production's list. Sign-in, users and tokens stay tenant-wide. Omitted or
+  empty means the default environment; an unknown slug falls back to it. Needs
+  a Userbox platform with environment-aware redirects (feature 060); an older
+  platform ignores the parameter.
 - `return_to` is validated to be same-origin with the calling app **on the
   client**. Defence-in-depth: the auth surface itself MUST also allowlist
   return URLs server-side before redirecting. The SDK's check is a UX

@@ -25,6 +25,7 @@ export function Providers(${props}) {
     <UserboxProvider
       tenantSlug={process.env.NEXT_PUBLIC_USERBOX_TENANT_SLUG${bang}}
       baseUrl={process.env.NEXT_PUBLIC_USERBOX_API_URL${bang}}
+      environment={process.env.NEXT_PUBLIC_USERBOX_ENVIRONMENT}
       tokenStorage="cookie"
       refreshUrl="/api/auth/refresh"
     >
@@ -76,6 +77,20 @@ export function wrapLayout(text: string, importPath: string): string | null {
   if (!lastImport || lastImport.index === undefined) return importLine + wrapped;
   const at = lastImport.index + lastImport[0].length;
   return `${wrapped.slice(0, at)}\n${importLine.trimEnd()}${wrapped.slice(at)}`;
+}
+
+/**
+ * Whether the app's Providers file passes the `environment` prop to
+ * <UserboxProvider>. `null` when there is no Providers file to look at (the
+ * app wires the provider somewhere else), so callers only warn on `false`.
+ */
+export function providerPassesEnvironment(project: NextProject): boolean | null {
+  const { root, appDir } = project;
+  const rel = ["tsx", "jsx", "ts", "js"].map((x) => `${appDir}/providers.${x}`).find((p) => existsSync(join(root, p)));
+  if (!rel) return null;
+  const text = readFileSync(join(root, rel), "utf8");
+  if (!/<UserboxProvider[\s>]/.test(text)) return null;
+  return /\benvironment=\{/.test(text);
 }
 
 export function scaffold(project: NextProject): ScaffoldResult {

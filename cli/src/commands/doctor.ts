@@ -5,9 +5,10 @@ import { join } from "node:path";
 import { ApiError, Session, rawRequest } from "../api.js";
 import type { Flags } from "../bin.js";
 import { loadCredentials } from "../credentials.js";
-import { ENV_KEYS, parseEnv } from "../envfile.js";
+import { ENV_KEYS, ENVIRONMENT_KEY, parseEnv } from "../envfile.js";
 import { CliError, type Output } from "../output.js";
-import { detectNextProject } from "../project.js";
+import { detectNextProject, type NextProject } from "../project.js";
+import { providerPassesEnvironment } from "../scaffold.js";
 import {
   type Environment,
   type Workspace,
@@ -27,6 +28,8 @@ export interface Check {
 }
 
 const MIN = { "@userbox/react": 4, "@userbox/node": 1 } as const;
+/** First `@userbox/react` alpha with the `environment` provider prop. */
+const REACT_ENVIRONMENT_MIN = 5;
 
 function alphaNumber(version: string): number | null {
   const m = /^1\.0\.0-alpha\.(\d+)$/.exec(version);
@@ -53,8 +56,17 @@ export function isLocalRedirectDomain(domain: string): boolean {
   );
 }
 
-/** The `--go-live` checks for the production environment. Warnings, never failures. */
-export function goLiveChecks(env: Environment, domains: string[], workspaces: Workspace[]): Check[] {
+/**
+ * The `--go-live` checks for the production environment. Warnings, never failures.
+ * `projectEnvironment` is the environment this project names on hosted sign-in
+ * (`NEXT_PUBLIC_USERBOX_ENVIRONMENT`), if any.
+ */
+export function goLiveChecks(
+  env: Environment,
+  domains: string[],
+  workspaces: Workspace[],
+  projectEnvironment?: Environment,
+): Check[] {
   const local = domains.filter(isLocalRedirectDomain);
   const dev = workspaces.find((w) => w.slug === DEV_WORKSPACE_SLUG);
   return [
@@ -64,9 +76,7 @@ export function goLiveChecks(env: Environment, domains: string[], workspaces: Wo
           name: "go-live: redirect domains",
           status: "warn",
           message: `${env.name} allows redirects to ${local.join(", ")}`,
-          hint: env.isDefault
-            ? `Remove ${local.length === 1 ? "it" : "them"} in Console → Auth settings for ${env.name} at launch. Hosted sign-in only reads the default environment's redirect domains for now, so sign-in from a local app stops working once ${local.length === 1 ? "it is" : "they are"} gone.`
-            : `Remove ${local.length === 1 ? "it" : "them"} in Console → Auth settings for ${env.name} before going live.`,
+          hint: goLiveRedirectHint(env, local.length, projectEnvironment),
         },
     dev
       ? {
@@ -77,6 +87,16 @@ export function goLiveChecks(env: Environment, domains: string[], workspaces: Wo
         }
       : { name: "go-live: dev workspace", status: "pass", message: `no "${DEV_WORKSPACE_SLUG}" workspace in ${env.name}` },
   ];
+}
+
+function goLiveRedirectHint(env: Environment, count: number, projectEnvironment?: Environment): string {
+  const them = count === 1 ? "it" : "them";
+  const remove = `Remove ${them} in Console → Auth settings for ${env.name} before going live.`;
+  if (projectEnvironment && projectEnvironment.id !== env.id) {
+    return `${remove} This project signs in through ${projectEnvironment.name}, so its local sign-in is not affected.`;
+  }
+  if (!env.isDefault) return remove;
+  return `${remove} A local app that names no environment uses ${env.name}'s list and stops signing in once ${count === 1 ? "it is" : "they are"} gone: set it up with \`userbox init --env development\` first.`;
 }
 
 export async function doctor(flags: Flags, out: Output): Promise<number> {
@@ -90,14 +110,16 @@ export async function doctor(flags: Flags, out: Output): Promise<number> {
 
   // Project and files
   let appDir = "app";
+  let project: NextProject | null = null;
   try {
-    const project = detectNextProject(root);
+    project = detectNextProject(root);
     appDir = project.appDir;
     add({ name: "project", status: "pass", message: `Next.js ${project.nextVersion ?? ""} (${appDir})`.trim() });
   } catch (err) {
     add({ name: "project", status: "fail", message: (err as Error).message, hint: (err as CliError).hint });
   }
 
+  const installed: Record<string, number | null> = {};
   for (const [name, min] of Object.entries(MIN)) {
     const pkgPath = join(root, "node_modules", name, "package.json");
     if (!existsSync(pkgPath)) {
@@ -106,6 +128,7 @@ export async function doctor(flags: Flags, out: Output): Promise<number> {
     }
     const version = (JSON.parse(readFileSync(pkgPath, "utf8")) as { version: string }).version;
     const n = alphaNumber(version);
+    installed[name] = n;
     add(
       n !== null && n >= min
         ? { name, status: "pass", message: version }
@@ -141,6 +164,24 @@ export async function doctor(flags: Flags, out: Output): Promise<number> {
       ? { name: "secrets", status: "pass", message: "no secret in a NEXT_PUBLIC_ variable" }
       : { name: "secrets", status: "fail", message: `${leaked.map(([k]) => k).join(", ")} is exposed to the browser`, hint: "Rename it without NEXT_PUBLIC_ and rotate the key in the console." },
   );
+  const named = env.get(ENVIRONMENT_KEY);
+  const reactAlpha = installed["@userbox/react"];
+  if (named && reactAlpha !== undefined && reactAlpha !== null && reactAlpha < REACT_ENVIRONMENT_MIN) {
+    add({
+      name: "environment",
+      status: "warn",
+      message: `.env.local names "${named}", but the installed @userbox/react ignores the environment option`,
+      hint: `Install @userbox/react@alpha (1.0.0-alpha.${REACT_ENVIRONMENT_MIN} or newer); until then hosted sign-in uses the default environment's redirect domains.`,
+    });
+  }
+  if (named && project && providerPassesEnvironment(project) === false) {
+    add({
+      name: "environment",
+      status: "warn",
+      message: `.env.local names "${named}", but <UserboxProvider> does not pass \`environment\``,
+      hint: "Add `environment={process.env.NEXT_PUBLIC_USERBOX_ENVIRONMENT}` to <UserboxProvider>, or hosted sign-in uses the default environment's redirect domains.",
+    });
+  }
   const gitignore = existsSync(join(root, ".gitignore")) ? readFileSync(join(root, ".gitignore"), "utf8") : "";
   add(
     /^(\.env\*|\.env\.local|\.env\*\.local|\*\.local)\s*$/m.test(gitignore)
@@ -204,15 +245,28 @@ export async function doctor(flags: Flags, out: Output): Promise<number> {
         add({ name: "login", status: "warn", message: `logged in to ${session.tenantSlug}, but .env.local points at another tenant` });
       } else {
         const environments = await listEnvironments(session);
-        // Hosted sign-in reads the default environment's auth settings only.
-        const envr = pickEnvironment(environments);
+        // Hosted sign-in checks the redirect against the environment the app
+        // names (NEXT_PUBLIC_USERBOX_ENVIRONMENT), else the default one.
+        const namedEnv = named ? environments.find((e) => e.slug?.toLowerCase() === named.trim().toLowerCase()) : undefined;
+        if (named && !namedEnv) {
+          add({
+            name: "environment",
+            status: "fail",
+            message: `.env.local names "${named}", which is not an environment of ${session.tenantSlug}`,
+            hint: "Hosted sign-in then uses the default environment. Run `userbox init --env <name>` with an existing environment, or remove the line.",
+          });
+        }
+        const envr = namedEnv ?? pickEnvironment(environments);
         const settings = await getAuthSettings(session, envr);
         const host = new URL(env.get("APP_ORIGIN") ?? "http://localhost:3000").hostname;
         const domains = settings.allowed_redirect_domains ?? [];
         add(domains.includes(host)
-          ? { name: "redirect domain", status: "pass", message: `${host} allowed` }
-          : { name: "redirect domain", status: "fail", message: `${host} is not an allowed redirect domain`, hint: "Run `userbox init`, or add it in Console → Auth settings." });
-        add(settings.allow_self_signup
+          ? { name: "redirect domain", status: "pass", message: `${host} allowed in ${envr.name}` }
+          : { name: "redirect domain", status: "fail", message: `${host} is not an allowed redirect domain of ${envr.name}`, hint: `Run \`userbox init${namedEnv ? ` --env ${named}` : ""}\`, or add it in Console → Auth settings for ${envr.name}.` });
+        // Sign-up settings always come from the default environment.
+        const defaultEnv = pickEnvironment(environments);
+        const signupSettings = defaultEnv.id === envr.id ? settings : await getAuthSettings(session, defaultEnv);
+        add(signupSettings.allow_self_signup
           ? { name: "sign-up", status: "pass", message: "self-service sign-up is on" }
           : { name: "sign-up", status: "warn", message: "sign-up is invitation-only", hint: "Fine for dev. Turn on self-service sign-up in the console if new users should register." });
 
@@ -223,7 +277,7 @@ export async function doctor(flags: Flags, out: Output): Promise<number> {
             goLive = { environment: null, ready: false };
           } else {
             const prodSettings = prod.id === envr.id ? settings : await getAuthSettings(session, prod);
-            const found = goLiveChecks(prod, prodSettings.allowed_redirect_domains ?? [], await listWorkspaces(session, prod));
+            const found = goLiveChecks(prod, prodSettings.allowed_redirect_domains ?? [], await listWorkspaces(session, prod), namedEnv);
             for (const c of found) add(c);
             goLive = { environment: { id: prod.id, name: prod.name }, ready: found.every((c) => c.status === "pass") };
           }
