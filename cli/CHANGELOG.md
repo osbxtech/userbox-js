@@ -2,6 +2,34 @@
 
 All notable changes to `@userbox/cli` are documented in this file.
 
+## [0.1.0-alpha.5] — 2026-11-09
+
+### Added
+- `init --env <name>` adds the redirect domain to that environment instead of
+  the default one, and writes its slug to `NEXT_PUBLIC_USERBOX_ENVIRONMENT` in
+  `.env.local`; the scaffolded `providers.tsx` passes it as
+  `<UserboxProvider environment>`. `init` warns when an existing Providers file
+  lacks the prop, and when `.env.local` names an environment but `init` ran
+  without `--env`.
+
+### Changed
+- `doctor` checks the redirect domain in the environment the project names
+  (sign-up mode still comes from the default one), warns when the Providers
+  file does not pass it or `@userbox/react` is older than `1.0.0-alpha.5`, and
+  fails when the tenant has no such environment. `doctor --go-live` no longer
+  says that removing `localhost` from production breaks local sign-in for a
+  project on another environment.
+- `init --force` finds the API key it replaces (by its public prefix; the
+  secret is never sent) and, at a terminal, offers to revoke it. With `--json`
+  or without a terminal it never revokes: it warns and reports the key in
+  `replacedApiKey` (`id`, `name`, `prefix`, `revoked`).
+
+### Fixed
+- A failed token refresh no longer always reads as `SESSION_EXPIRED`. Only a
+  refresh token the API rejects (401 `INVALID_REFRESH_TOKEN`: expired, revoked
+  or already used) means the login is over. Any other 4xx keeps the API's code
+  and message, with a hint that a new login will not fix it.
+
 ## [0.1.0-alpha.4] — 2026-11-06
 
 ### Changed
