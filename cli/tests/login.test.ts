@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { logIn } from "../src/commands/login.js";
+import { logIn, loginDurationLine } from "../src/commands/login.js";
 import { CliError, printError } from "../src/output.js";
 import { deriveSignupUrl, resolveSignupUrl } from "../src/signup.js";
 
@@ -147,5 +147,23 @@ describe("credentials path in the login message", () => {
       "/tmp/xdg-test/userbox/credentials.json",
     );
     expect(displayPath("/home/anabel/x", "/home/ana")).toBe("/home/anabel/x");
+  });
+});
+
+describe("loginDurationLine", () => {
+  it("states the tenant's session duration", () => {
+    expect(loginDurationLine(1440)).toBe("It expires after 24 hours without use (the tenant's session duration).");
+    expect(loginDurationLine(90)).toBe("It expires after 90 minutes without use (the tenant's session duration).");
+    expect(loginDurationLine(120)).toBe("It expires after 2 hours without use (the tenant's session duration).");
+  });
+
+  it("caps the period at 7 days, as the API does", () => {
+    expect(loginDurationLine(20160)).toBe("It expires after 7 days without use (the tenant's session duration).");
+  });
+
+  it("names no number it does not know", () => {
+    const line = loginDurationLine(undefined);
+    expect(line).toContain("session duration");
+    expect(line).not.toMatch(/7 days of inactivity/);
   });
 });
