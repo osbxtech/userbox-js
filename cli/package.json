@@ -1,6 +1,6 @@
 {
   "name": "@userbox/cli",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "Userbox command-line tool: log in, set up a Next.js app, sync permissions and roles, seed dev users.",
   "type": "module",
   "bin": {
