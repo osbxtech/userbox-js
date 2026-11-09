@@ -5,6 +5,15 @@ All notable changes to `@userbox/react` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-alpha.6] — 2026-11-09
+
+### Fixed
+- The Next.js refresh handler (`createRefreshHandler`) retries the upstream
+  token exchange once, with the same refresh token, when the first attempt
+  failed in transit (network error or 5xx). The Userbox API replays the same
+  rotated pair for a short grace window, so a response lost during a rollout
+  no longer ends the session. A 4xx is never retried.
+
 ## [1.0.0-alpha.5] — 2026-11-09
 
 ### Added

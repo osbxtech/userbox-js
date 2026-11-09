@@ -2,6 +2,18 @@
 
 All notable changes to `@userbox/cli` are documented in this file.
 
+## [0.1.0-alpha.6] — 2026-11-09
+
+### Fixed
+- `login` no longer says the login "lasts 7 days of inactivity". It reads the
+  default environment's session duration and says the login expires after that
+  long without use (24 hours by default; the API caps it at 7 days). If the
+  setting cannot be read, the message names no number.
+- A token refresh that failed in transit (network error or 5xx) is retried
+  once, with the same refresh token. The Userbox API replays the same rotated
+  pair for a short grace window, so a response lost during a rollout no longer
+  ends the login. A 4xx is never retried.
+
 ## [0.1.0-alpha.5] — 2026-11-09
 
 ### Added
