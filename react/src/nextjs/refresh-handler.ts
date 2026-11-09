@@ -190,11 +190,17 @@ async function handle(req: Request, c: ResolvedConfig): Promise<Response> {
   if (body.action !== undefined) return error(400, "INVALID_REQUEST");
   if (refreshToken === null) return error(401, "NO_REFRESH_COOKIE");
 
-  const upstream = await fetch(`${c.apiUrl}/v1/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Tenant-ID": c.tenantSlug },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  }).catch(() => null);
+  const exchange = () =>
+    fetch(`${c.apiUrl}/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tenant-ID": c.tenantSlug },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    }).catch(() => null);
+  // One retry with the same token when the first attempt failed in transit:
+  // the API replays the same rotated pair for a short grace window, so a
+  // response lost during a rollout does not end the session.
+  let upstream = await exchange();
+  if (upstream === null || upstream.status >= 500) upstream = await exchange();
   if (upstream === null) return error(502, "UPSTREAM_UNAVAILABLE");
 
   if (upstream.ok) {

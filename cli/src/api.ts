@@ -90,6 +90,28 @@ export function refreshError(err: unknown): unknown {
   );
 }
 
+/**
+ * Retry a refresh once, with the same refresh token, when the first attempt
+ * failed in transit (network error or 5xx). The API keeps a rotated token
+ * replayable for a short grace window and returns the same pair, so a
+ * response lost during a rollout does not end the login. A 4xx is final.
+ */
+export async function withRefreshRetry<T>(
+  attempt: () => Promise<T>,
+  delayMs = 500,
+): Promise<T> {
+  try {
+    return await attempt();
+  } catch (err) {
+    const transient =
+      (err instanceof ApiError && err.status >= 500) ||
+      (!(err instanceof ApiError) && err instanceof CliError && err.code === "NETWORK");
+    if (!transient) throw err;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    return attempt();
+  }
+}
+
 /** An authenticated client bound to the stored CLI login. */
 export class Session {
   private constructor(private creds: Credentials) {}
@@ -126,11 +148,13 @@ export class Session {
 
   private async refresh(): Promise<void> {
     try {
-      const tokens = await rawRequest<TokenPair>(this.creds.apiUrl, "/v1/auth/refresh", {
-        method: "POST",
-        body: { refresh_token: this.creds.refreshToken },
-        headers: { "X-Tenant-ID": this.creds.tenantId },
-      });
+      const tokens = await withRefreshRetry(() =>
+        rawRequest<TokenPair>(this.creds.apiUrl, "/v1/auth/refresh", {
+          method: "POST",
+          body: { refresh_token: this.creds.refreshToken },
+          headers: { "X-Tenant-ID": this.creds.tenantId },
+        }),
+      );
       this.creds = {
         ...this.creds,
         accessToken: tokens.access_token,
