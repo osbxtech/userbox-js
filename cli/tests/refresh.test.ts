@@ -41,7 +41,7 @@ async function requestWithRefreshAnswer(res: Response): Promise<CliError> {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string | URL | Request) => {
-      if (String(input).endsWith("/v1/auth/refresh")) return res;
+      if (String(input).endsWith("/v1/auth/refresh")) return res.clone();
       throw new Error("the request should not be sent after a failed refresh");
     }),
   );
@@ -79,5 +79,44 @@ describe("refresh errors", () => {
     const err = await requestWithRefreshAnswer(json(503, { code: "UNAVAILABLE", error: "down" }));
     expect(err.code).toBe("UNAVAILABLE");
     expect(err.message).not.toContain("refreshing");
+  });
+});
+
+describe("refresh retry (API grace window)", () => {
+  it.each([
+    ["a 503", () => Promise.resolve(json(503, { code: "UNAVAILABLE", error: "down" }))],
+    ["a network error", () => Promise.reject(new TypeError("fetch failed"))],
+  ])("retries once with the same refresh token after %s", async (_label, first) => {
+    const bodies: string[] = [];
+    let refreshCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        if (String(input).endsWith("/v1/auth/refresh")) {
+          bodies.push(String(init?.body));
+          refreshCalls += 1;
+          if (refreshCalls === 1) return first();
+          return json(200, { access_token: "a.b.c", refresh_token: "rt-2", expires_in: 900 });
+        }
+        return json(200, { environments: [] });
+      }),
+    );
+    await expect(Session.load().request("/v1/environments")).resolves.toEqual({ environments: [] });
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toBe(bodies[1]);
+    expect(JSON.parse(bodies[0]!)).toEqual({ refresh_token: "not-a-real-refresh-token" });
+  });
+
+  it("does not retry a rejected refresh token", async () => {
+    let refreshCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        if (String(input).endsWith("/v1/auth/refresh")) refreshCalls += 1;
+        return json(401, { code: "INVALID_REFRESH_TOKEN", error: "Refresh token is invalid or expired" });
+      }),
+    );
+    await expect(Session.load().request("/v1/environments")).rejects.toMatchObject({ code: "SESSION_EXPIRED" });
+    expect(refreshCalls).toBe(1);
   });
 });

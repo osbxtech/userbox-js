@@ -164,6 +164,29 @@ describe("createRefreshHandler: refresh", () => {
     expect(cookies(res)).toEqual([]);
   });
 
+  it.each([
+    ["a 503", () => Promise.resolve(json({}, 503))],
+    ["a network failure", () => Promise.reject(new TypeError("fetch failed"))],
+  ])("retries once with the same token after %s (API grace window)", async (_label, first) => {
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementationOnce(first as () => Promise<Response>)
+      .mockResolvedValueOnce(json({ access_token: "at-2", refresh_token: "rt-2", expires_in: 900 }));
+    const res = await handler().POST(post({}, { cookie: "ub_refresh=rt-1" }));
+    expect(res.status).toBe(200);
+    expect(spy).toHaveBeenCalledTimes(2);
+    for (const call of spy.mock.calls) {
+      expect(JSON.parse(String(call[1]?.body))).toEqual({ refresh_token: "rt-1" });
+    }
+    expect(cookies(res)[0]).toMatch(/^ub_refresh=rt-2;/);
+  });
+
+  it("does not retry a 4xx", async () => {
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(json({ code: "X" }, 429));
+    await handler().POST(post({}, { cookie: "ub_refresh=rt-1" }));
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
   it("returns 502 when upstream 200 lacks the expected fields", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(json({ access_token: "at" }));
     const res = await handler().POST(post({}, { cookie: "ub_refresh=rt-1" }));
