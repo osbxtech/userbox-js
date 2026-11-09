@@ -28,6 +28,7 @@ export function useSignIn(): { signIn: (opts?: SignInOptions) => void } {
         tenantSlug: ctx.config.tenantSlug,
         baseUrl: ctx.config.baseUrl,
         baseAuthUrl: ctx.config.baseAuthUrl,
+        environment: ctx.config.environment,
         path: "/login",
         returnTo,
         state: nonce,

@@ -5,11 +5,11 @@ import { join } from "node:path";
 
 import { Session } from "../api.js";
 import type { Flags } from "../bin.js";
-import { ENV_KEYS, mergeEnv, parseEnv } from "../envfile.js";
+import { ENV_KEYS, ENVIRONMENT_KEY, mergeEnv, parseEnv } from "../envfile.js";
 import { CliError, type Output } from "../output.js";
 import { confirm } from "../prompt.js";
 import { detectNextProject, installCommand } from "../project.js";
-import { scaffold } from "../scaffold.js";
+import { providerPassesEnvironment, scaffold } from "../scaffold.js";
 import {
   type ApiKeySummary,
   createApiKey,
@@ -106,10 +106,12 @@ export async function init(flags: Flags, out: Output): Promise<void> {
 
   const environments = await listEnvironments(session);
   const env = pickEnvironment(environments, flags.env);
-  // Hosted sign-in checks redirects against the default environment's auth
-  // settings only (it gets a tenant slug, never an environment), so the
-  // redirect domain always goes there, whatever --env says.
-  const signInEnv = pickEnvironment(environments);
+  // With --env the app names its environment on hosted sign-in
+  // (NEXT_PUBLIC_USERBOX_ENVIRONMENT → <UserboxProvider environment>), and
+  // hosted sign-in checks redirects against that environment's domains. So
+  // the redirect domain goes to the same environment as the key. Without
+  // --env, both go to the default environment, as before.
+  const envSlug = flags.env ? (env.slug ?? null) : null;
   out.step(`Tenant ${session.tenantSlug}, environment ${env.name} (${env.type})`);
   if (env.type === "production") {
     out.warn(
@@ -119,13 +121,10 @@ export async function init(flags: Flags, out: Output): Promise<void> {
     );
   }
 
-  const where = signInEnv.id === env.id ? "" : ` of the default environment ${signInEnv.name}`;
-  if (await ensureRedirectDomain(session, signInEnv, host)) out.step(`Added ${host} to the allowed redirect domains${where}`);
-  else out.step(`${host} is already an allowed redirect domain${where}`);
-  if (signInEnv.id !== env.id) {
-    out.warn(
-      `${host} was added to the redirect domains of the default environment "${signInEnv.name}", not "${env.name}": hosted sign-in only reads the default environment's redirect domains for now.`,
-    );
+  if (await ensureRedirectDomain(session, env, host)) out.step(`Added ${host} to the allowed redirect domains of ${env.name}`);
+  else out.step(`${host} is already an allowed redirect domain of ${env.name}`);
+  if (flags.env && !envSlug) {
+    out.warn(`The API returned no slug for "${env.name}", so .env.local does not name it; hosted sign-in will use the default environment's redirect domains.`);
   }
 
   // .env.local: reuse an existing key unless --force; never print values.
@@ -138,6 +137,13 @@ export async function init(flags: Flags, out: Output): Promise<void> {
     USERBOX_TENANT_ID: session.tenantId,
     APP_ORIGIN: origin,
   };
+  if (envSlug) values[ENVIRONMENT_KEY] = envSlug;
+  const namedEnv = current.get(ENVIRONMENT_KEY);
+  if (!flags.env && namedEnv) {
+    out.warn(
+      `.env.local names the environment "${namedEnv}" (${ENVIRONMENT_KEY}), but this run used the default environment. Run with --env ${namedEnv}, or remove that line.`,
+    );
+  }
   let keyCreated = false;
   let keyScopes: string[] | null = null;
   const oldRaw = current.get("USERBOX_API_KEY");
@@ -154,7 +160,10 @@ export async function init(flags: Flags, out: Output): Promise<void> {
   } else if (flags.workspacesWrite) {
     out.warn(".env.local keeps its existing USERBOX_API_KEY, so --workspaces-write had no effect; run with --force for a new key.");
   }
-  const merged = mergeEnv(existing, values, flags.force ? new Set(ENV_KEYS) : new Set());
+  // --env is explicit, so the environment line is always updated.
+  const force = new Set<string>(flags.force ? [...ENV_KEYS, ENVIRONMENT_KEY] : []);
+  if (envSlug) force.add(ENVIRONMENT_KEY);
+  const merged = mergeEnv(existing, values, force);
   writeFileSync(envPath, merged.text, { mode: 0o600 });
   out.step(`.env.local: ${merged.added.length} added, ${merged.replaced.length} replaced, ${merged.kept.length} kept`);
   const replacedApiKey = replaced ? await settleReplacedKey(session, env, replaced, flags, out) : null;
@@ -185,6 +194,11 @@ export async function init(flags: Flags, out: Output): Promise<void> {
   }
 
   const files = scaffold(project);
+  if (envSlug && providerPassesEnvironment(project) === false) {
+    files.todo.push(
+      "Your Providers file predates the environment option: add `environment={process.env.NEXT_PUBLIC_USERBOX_ENVIRONMENT}` to <UserboxProvider>, or hosted sign-in keeps using the default environment's redirect domains.",
+    );
+  }
   const envArg = flags.env ? ` --env ${flags.env}` : "";
   for (const f of files.written) out.step(`Wrote ${f}`);
   for (const t of files.todo) out.warn(t);
@@ -194,7 +208,8 @@ export async function init(flags: Flags, out: Output): Promise<void> {
       tenant: { id: session.tenantId, slug: session.tenantSlug },
       environment: { id: env.id, name: env.name, slug: env.slug ?? null, type: env.type },
       redirectDomain: host,
-      redirectDomainEnvironment: { id: signInEnv.id, name: signInEnv.name, type: signInEnv.type },
+      redirectDomainEnvironment: { id: env.id, name: env.name, type: env.type },
+      namedEnvironment: envSlug,
       envFile: { path: ".env.local", added: merged.added, replaced: merged.replaced, kept: merged.kept },
       apiKeyCreated: keyCreated,
       apiKeyScopes: keyScopes,

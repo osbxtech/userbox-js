@@ -40,8 +40,8 @@ Secrets never pass through the model:
 - `--env <name>` with an unknown name fails with `UNKNOWN_ENVIRONMENT`; the
   hint and the `--json` error (`environments`, at the top level) list the
   tenant's environments. Without `--env` every command uses the default one.
-  `init` always adds the redirect domain to the default environment (see
-  [Environments](#environments)).
+  `init --env` also adds the redirect domain to that environment and names it
+  in `.env.local` (see [Environments](#environments)).
 - `doctor --go-live` adds `goLive: { environment, ready }` to the `--json`
   result; its findings are `warn` checks, so the exit code stays 0. Show them
   to the human before launch: removing a redirect domain or archiving a
@@ -53,10 +53,10 @@ Secrets never pass through the model:
 |---|---|
 | `login` | Logs in as a tenant admin (a user with console access). Stores the session in `~/.config/userbox/credentials.json`, mode 600. `--api-url` picks another API. |
 | `logout` / `whoami` | Forget / show the login. |
-| `init` | Creates the API key in the default environment, or the one named by `--env`. Needs Next.js with `app/` or `src/app/`. Adds the `--origin` host (default `http://localhost:3000`) to the allowed redirect domains of the default environment (hosted sign-in reads only those), creates an API key with `access:check`, `memberships:read`, `workspaces:read` (plus `workspaces:write` with `--workspaces-write`, or when you answer yes to "Will your backend create a workspace per customer?" at a terminal) unless `.env.local` already has one, merges the five variables into `.env.local` without touching existing values (`--force` replaces them), makes sure `.env.local` is git-ignored, installs `@userbox/react@alpha` and `@userbox/node@alpha` (`--skip-install` skips it), and writes `providers.tsx`, `auth/callback/page.tsx` and `api/auth/refresh/route.ts` if they do not exist. It wraps `{children}` in the root layout with `<Providers>` when that edit is unambiguous. |
+| `init` | Creates the API key in the default environment, or the one named by `--env`. Needs Next.js with `app/` or `src/app/`. Adds the `--origin` host (default `http://localhost:3000`) to the allowed redirect domains of that same environment, and with `--env` writes its slug to `NEXT_PUBLIC_USERBOX_ENVIRONMENT` (always updated, even without `--force`) so `<UserboxProvider environment>` names it on hosted sign-in. Creates an API key with `access:check`, `memberships:read`, `workspaces:read` (plus `workspaces:write` with `--workspaces-write`, or when you answer yes to "Will your backend create a workspace per customer?" at a terminal) unless `.env.local` already has one, merges the five variables into `.env.local` without touching existing values (`--force` replaces them), makes sure `.env.local` is git-ignored, installs `@userbox/react@alpha` and `@userbox/node@alpha` (`--skip-install` skips it), and writes `providers.tsx`, `auth/callback/page.tsx` and `api/auth/refresh/route.ts` if they do not exist. It wraps `{children}` in the root layout with `<Providers>` when that edit is unambiguous. |
 | `apply` | Reads `userbox.yaml`, creates missing permissions, and makes every declared role in the environment's role catalogue (default environment, or `--env`) hold exactly its listed permissions. A declared role that already exists in the console is taken over by the file. Permissions and roles that are not in the file are reported ("exists only in the console (kept)"), never deleted. Removing a permission from a role needs a human at a terminal, even with `--yes`. |
 | `dev seed` | Creates (or reuses) the workspace `dev` in the default environment or the one named by `--env`, syncs `userbox.yaml` into the environment's role catalogue and gives you its `admin` role. `--invite email[:role]` invites more users by email (role defaults to `member`). Warns when that environment is a production environment. |
-| `doctor` | Checks the project, SDK versions, auth files, `.env.local`, secrets in `NEXT_PUBLIC_*`, `.gitignore`, the API and JWKS, the API key's tenant and `access:check` scope, and, when logged in, the redirect domain and sign-up mode of the default environment. `--go-live` also checks the production environment: it warns about `localhost` / `127.0.0.1` redirect domains and about the `dev` workspace that `dev seed` creates. Exits 1 when a check fails; warnings do not fail. |
+| `doctor` | Checks the project, SDK versions, auth files, `.env.local`, secrets in `NEXT_PUBLIC_*`, `.gitignore`, the API and JWKS, the API key's tenant and `access:check` scope, and, when logged in, the redirect domain of the environment the project names (`NEXT_PUBLIC_USERBOX_ENVIRONMENT`, else the default one) and the sign-up mode of the default environment. It warns when `.env.local` names an environment that the Providers file does not pass, and fails when the tenant has no such environment. `--go-live` also checks the production environment: it warns about `localhost` / `127.0.0.1` redirect domains and about the `dev` workspace that `dev seed` creates. Exits 1 when a check fails; warnings do not fail. |
 
 ## Environments
 
@@ -67,15 +67,23 @@ create a development or staging environment in the console and pass its slug,
 name or type:
 
 ```bash
-npx @userbox/cli init --env development       # API key in development
+npx @userbox/cli init --env development       # API key and localhost in development
 npx @userbox/cli apply --env development
 npx @userbox/cli dev seed --env development
 ```
 
+`init --env development` adds `localhost` to **development's** redirect
+domains and writes `NEXT_PUBLIC_USERBOX_ENVIRONMENT=development`; the
+scaffolded `providers.tsx` passes it as `<UserboxProvider environment>`.
+Hosted sign-in then checks the return address against development's list, so
+production's list can stay free of `localhost`. Sign-in, users and tokens stay
+tenant-wide. A `providers.tsx` written by an older CLI lacks the prop: `init`
+and `doctor` say so; add
+`environment={process.env.NEXT_PUBLIC_USERBOX_ENVIRONMENT}` by hand. Needs
+`@userbox/react` with the `environment` option.
+
 Limits for now:
 
-- Hosted sign-in reads the redirect domains of the **default environment
-  only**, so `init` adds `localhost` there even with `--env`, and says so.
 - Permission keys are unique per tenant, not per environment: `apply --env`
   reuses a permission that already exists in another environment.
 - `init --env` reuses an existing `USERBOX_API_KEY` in `.env.local` unless you
@@ -88,8 +96,9 @@ Limits for now:
 
 Before going live, `npx @userbox/cli doctor --go-live` lists what the
 default flow left in production: `localhost` redirect domains and the `dev`
-workspace. Removing `localhost` from the default environment also stops
-sign-in from a local app against this tenant.
+workspace. Removing `localhost` from production does not affect a project set
+up with `init --env development`; a local app that names no environment uses
+the default environment's list and stops signing in once it is gone.
 
 ## `userbox.yaml`
 

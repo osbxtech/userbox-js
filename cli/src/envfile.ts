@@ -10,6 +10,13 @@ export const ENV_KEYS = [
   "APP_ORIGIN",
 ] as const;
 
+/**
+ * Optional: the environment slug the app names on hosted sign-in, written by
+ * `init --env`. Not in ENV_KEYS because a project on the default environment
+ * does not have it.
+ */
+export const ENVIRONMENT_KEY = "NEXT_PUBLIC_USERBOX_ENVIRONMENT";
+
 export type EnvKey = (typeof ENV_KEYS)[number];
 
 const LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/;

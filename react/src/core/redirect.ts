@@ -2,6 +2,24 @@ import { misconfigured, type UserboxError } from "./errors";
 
 const SLUG_REGEX = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
 const MAX_RETURN_TO_LENGTH = 2048;
+// Environment slug, as the Userbox console and `@userbox/cli --env` show it.
+const ENVIRONMENT_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
+
+/**
+ * Optional `environment`: the slug of the tenant environment this app runs
+ * against (e.g. `development`). Hosted sign-in then checks `returnTo` against
+ * that environment's allowed redirect domains instead of the default
+ * environment's. Public, not a secret.
+ */
+export function assertValidEnvironment(environment: string | undefined): void {
+  if (environment === undefined) return;
+  if (typeof environment !== "string" || !ENVIRONMENT_REGEX.test(environment)) {
+    throw misconfiguredField(
+      "environment",
+      "environment must be an environment slug matching /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/",
+    );
+  }
+}
 
 export function isValidSlug(slug: string): boolean {
   return SLUG_REGEX.test(slug);
@@ -39,6 +57,8 @@ export type AuthSurfaceUrlInput = {
    */
   baseAuthUrl?: string;
   path: "/login" | "/signup";
+  /** Environment slug; omitted from the URL when undefined. */
+  environment?: string;
   returnTo: string;
   state: string;
   flowId: string;
@@ -79,12 +99,16 @@ export function deriveAuthOrigin(baseUrl: string, tenantSlug: string): string {
 export function buildAuthSurfaceUrl(input: AuthSurfaceUrlInput): string {
   assertValidSlug(input.tenantSlug);
   assertValidReturnTo(input.returnTo);
+  assertValidEnvironment(input.environment);
   const origin = input.baseAuthUrl ?? deriveAuthOrigin(input.baseUrl, input.tenantSlug);
   const trimmed = origin.replace(/\/+$/, "");
   const u = new URL(trimmed + input.path);
   u.searchParams.set("return_to", input.returnTo);
   u.searchParams.set("state", input.state);
   u.searchParams.set("flow_id", input.flowId);
+  if (input.environment !== undefined) {
+    u.searchParams.set("environment", input.environment);
+  }
   return u.toString();
 }
 

@@ -25,6 +25,7 @@ export function useSignUp(): { signUp: (opts?: SignInOptions) => void } {
         tenantSlug: ctx.config.tenantSlug,
         baseUrl: ctx.config.baseUrl,
         baseAuthUrl: ctx.config.baseAuthUrl,
+        environment: ctx.config.environment,
         path: "/signup",
         returnTo,
         state: nonce,

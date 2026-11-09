@@ -9,7 +9,8 @@ export type MisconfiguredField =
   | "baseUrl"
   | "tokenStorage"
   | "refreshUrl"
-  | "callbackUrl";
+  | "callbackUrl"
+  | "environment";
 
 export type UserboxError =
   | {
