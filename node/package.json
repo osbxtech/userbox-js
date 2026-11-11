@@ -36,14 +36,14 @@
     "lint": "eslint ."
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
+    "@types/node": "^26.6.6",
     "@typescript-eslint/parser": "^8.20.0",
-    "eslint": "^9.18.0",
+    "eslint": "^10.14.0",
     "jose": "^6.2.15",
-    "tsd": "^0.31.2",
-    "tsup": "^8.3.5",
-    "typescript": "^5.6.3",
-    "vitest": "^2.1.8"
+    "tsd": "^0.33.0",
+    "tsup": "^9.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
   },
   "tsd": {
     "directory": "tests"
