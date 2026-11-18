@@ -6,9 +6,19 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
+      # Minor/patch only: majors arrive one per PR, so a single breaking
+      # major (TypeScript 7, vitest 5, ...) can't block every other bump.
       dev-dependencies:
         dependency-type: development
-        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      # TypeScript 7 (native compiler) has no JS compiler API, which tsup's
+      # dts build (rollup-plugin-dts) needs. Revisit when tsup supports it.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # Types track the minimum supported Node (engines: >=22.14).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
