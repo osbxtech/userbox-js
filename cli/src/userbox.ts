@@ -88,8 +88,13 @@ export function getAuthSettings(s: Session, env: Environment): Promise<AuthSetti
 }
 
 /** Adds `host` (a bare hostname such as `localhost`) to the allowed redirect domains. */
-export async function ensureRedirectDomain(s: Session, env: Environment, host: string): Promise<boolean> {
-  const settings = await getAuthSettings(s, env);
+export async function ensureRedirectDomain(
+  s: Session,
+  env: Environment,
+  host: string,
+  known?: AuthSettings,
+): Promise<boolean> {
+  const settings = known ?? (await getAuthSettings(s, env));
   const domains = settings.allowed_redirect_domains ?? [];
   if (domains.includes(host)) return false;
   await s.request(`/v1/environments/${env.id}/auth-settings`, {
@@ -273,4 +278,23 @@ export function replaceRoleGrants(s: Session, env: Environment, roleId: string, 
     envId: env.id,
     body: { grants: keys.map((k) => ({ permission_key: k, effect: "allow" })), managed_by: "apply" },
   });
+}
+
+/**
+ * The internal (`userbox.*`) permissions the logged-in user holds (`allow`
+ * grants only), or null when they cannot be read. Reading them needs
+ * `userbox.users.read` (`GET /v1/users/{id}/permissions`); without it, or on
+ * any other failure, the caller goes on and each call reports its own missing
+ * permission. An expired login still fails, since nothing else would work.
+ */
+export async function readOwnPermissions(s: Session): Promise<Set<string> | null> {
+  try {
+    const res = await s.request<{ items: { key: string; effect: string }[] }>(
+      `/v1/users/${encodeURIComponent(s.userId)}/permissions`,
+    );
+    return new Set(res.items.filter((g) => g.effect === "allow").map((g) => g.key));
+  } catch (err) {
+    if (err instanceof CliError && err.code === "SESSION_EXPIRED") throw err;
+    return null;
+  }
 }

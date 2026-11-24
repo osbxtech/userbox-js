@@ -2,6 +2,25 @@
 
 All notable changes to `@userbox/cli` are documented in this file.
 
+## [0.1.0-alpha.7] — 2026-11-24
+
+### Added
+- `init` checks your console permissions before it changes anything. When the
+  login lacks one this run needs (`userbox.console.access` to read the redirect
+  domains, `userbox.tenant.manage` to add one, `userbox.api_keys.manage` to
+  create the API key), it lists every missing permission with what it is for,
+  says to ask a tenant owner to tick it in Console → Users → Edit, and exits
+  with `MISSING_PERMISSIONS` without writing anything. With `--json` the error
+  carries `missing_permissions: [{key, purpose, description}]`. Reading your
+  own permissions needs `userbox.users.read`; without it `init` goes on as
+  before and a refused step names its permission.
+
+### Fixed
+- A 403 `INSUFFICIENT_PERMISSION` names the missing permission, says what it is
+  needed for, and hints who can grant it, in every command.
+- API errors shaped `{detail: {code, error}}` keep their code and message
+  instead of showing as `HTTP_<status>` with raw JSON.
+
 ## [0.1.0-alpha.6] — 2026-11-09
 
 ### Fixed

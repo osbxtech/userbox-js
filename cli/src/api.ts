@@ -1,5 +1,6 @@
 import { type Credentials, loadCredentials, saveCredentials } from "./credentials.js";
 import { CliError } from "./output.js";
+import { GRANT_HINT, permissionFromError, permissionPurpose } from "./permissions.js";
 
 export const DEFAULT_API_URL = "https://api.test.userbox.app";
 
@@ -14,22 +15,46 @@ export class ApiError extends CliError {
     readonly status: number,
     code: string,
     message: string,
+    hint?: string,
+    data?: Record<string, unknown>,
   ) {
-    super(code, `${message} (HTTP ${status})`);
+    super(code, `${message} (HTTP ${status})`, hint, data);
   }
 }
 
-async function parseError(res: Response): Promise<ApiError> {
+function asErrorBody(value: unknown): ApiErrorBody {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as ApiErrorBody) : {};
+}
+
+/**
+ * Turn an error response into an ApiError. The API answers `{code, error}`,
+ * or `{detail: {code, error}}` from some routes; both give the same error.
+ * A 403 that names the missing permission says what it is for and who can
+ * grant it.
+ */
+export async function parseError(res: Response): Promise<ApiError> {
   let body: ApiErrorBody = {};
   try {
-    body = (await res.json()) as ApiErrorBody;
+    body = asErrorBody(await res.json());
   } catch {
     // non-JSON error body
   }
+  const nested = asErrorBody(body.detail);
+  const code = body.code ?? nested.code ?? `HTTP_${res.status}`;
   const message =
     body.error ??
+    nested.error ??
     (typeof body.detail === "string" ? body.detail : body.detail ? JSON.stringify(body.detail) : res.statusText);
-  return new ApiError(res.status, body.code ?? `HTTP_${res.status}`, message);
+  const permission = res.status === 403 ? permissionFromError(message) : null;
+  if (!permission) return new ApiError(res.status, code, message);
+  const purpose = permissionPurpose(permission);
+  return new ApiError(
+    res.status,
+    code,
+    purpose ? `${message} (needed to ${purpose})` : message,
+    `Your Userbox login lacks the console permission ${permission}: ${GRANT_HINT}, then retry.`,
+    { missing_permissions: [{ key: permission, purpose }] },
+  );
 }
 
 export interface RequestOptions {
