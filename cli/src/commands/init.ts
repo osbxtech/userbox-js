@@ -7,17 +7,28 @@ import { Session } from "../api.js";
 import type { Flags } from "../bin.js";
 import { ENV_KEYS, ENVIRONMENT_KEY, mergeEnv, parseEnv } from "../envfile.js";
 import { CliError, type Output } from "../output.js";
+import {
+  API_KEYS_MANAGE,
+  CONSOLE_ACCESS,
+  GRANT_HINT,
+  type MissingPermission,
+  permissionPurpose,
+  TENANT_MANAGE,
+} from "../permissions.js";
 import { confirm } from "../prompt.js";
 import { detectNextProject, installCommand } from "../project.js";
 import { providerPassesEnvironment, scaffold } from "../scaffold.js";
 import {
   type ApiKeySummary,
+  type AuthSettings,
   createApiKey,
   type Environment,
   ensureRedirectDomain,
   findActiveApiKey,
+  getAuthSettings,
   listEnvironments,
   pickEnvironment,
+  readOwnPermissions,
   revokeApiKey,
 } from "../userbox.js";
 
@@ -80,6 +91,63 @@ async function settleReplacedKey(
   return { id: key.id, name: key.name, prefix: key.prefix, revoked };
 }
 
+interface Preflight {
+  /** The environment's auth settings when the preflight already read them. */
+  settings?: AuthSettings;
+}
+
+/**
+ * Before anything is written: check that the login holds every console
+ * permission the steps of this run need, and fail listing all the missing
+ * ones at once. Best effort: when the user's own permissions cannot be read
+ * (that needs `userbox.users.read`), init goes on and a step that is refused
+ * names its permission in the error.
+ */
+async function preflight(
+  session: Session,
+  env: Environment,
+  host: string,
+  needsKey: boolean,
+  out: Output,
+): Promise<Preflight> {
+  const granted = await readOwnPermissions(session);
+  if (!granted) {
+    out.step("Could not read your console permissions (that needs userbox.users.read); a refused step will name the one it needs.");
+    return {};
+  }
+  const missing: MissingPermission[] = [];
+  const need = (key: string, purpose: string) => {
+    if (!granted.has(key)) missing.push({ key, purpose });
+  };
+  need(CONSOLE_ACCESS, `read the allowed redirect domains of ${env.name}`);
+  let settings: AuthSettings | undefined;
+  if (granted.has(CONSOLE_ACCESS)) settings = await getAuthSettings(session, env);
+  // Without console access the domains are unknown, so the write may be needed.
+  if (!settings || !(settings.allowed_redirect_domains ?? []).includes(host)) {
+    need(TENANT_MANAGE, `add ${host} to the allowed redirect domains of ${env.name}`);
+  }
+  if (needsKey) need(API_KEYS_MANAGE, `create the API key for .env.local in ${env.name}`);
+  if (missing.length > 0) {
+    const n = missing.length;
+    throw new CliError(
+      "MISSING_PERMISSIONS",
+      [
+        `your Userbox login (${session.email}) lacks ${n === 1 ? "a console permission" : `${n} console permissions`} init needs; nothing was changed:`,
+        ...missing.map((m) => `  - ${m.key}: to ${m.purpose}`),
+      ].join("\n"),
+      `For each one, ${GRANT_HINT}, then run init again.`,
+      {
+        missing_permissions: missing.map((m) => ({
+          key: m.key,
+          purpose: m.purpose,
+          description: permissionPurpose(m.key),
+        })),
+      },
+    );
+  }
+  return { settings };
+}
+
 function ensureGitignored(root: string): boolean {
   const path = join(root, ".gitignore");
   const text = existsSync(path) ? readFileSync(path, "utf8") : "";
@@ -121,16 +189,21 @@ export async function init(flags: Flags, out: Output): Promise<void> {
     );
   }
 
-  if (await ensureRedirectDomain(session, env, host)) out.step(`Added ${host} to the allowed redirect domains of ${env.name}`);
+  // .env.local: reuse an existing key unless --force; never print values.
+  const envPath = join(root, ".env.local");
+  const existing = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
+  const current = parseEnv(existing);
+  const oldRaw = current.get("USERBOX_API_KEY");
+  const needsKey = flags.force || !oldRaw;
+
+  const { settings } = await preflight(session, env, host, needsKey, out);
+
+  if (await ensureRedirectDomain(session, env, host, settings)) out.step(`Added ${host} to the allowed redirect domains of ${env.name}`);
   else out.step(`${host} is already an allowed redirect domain of ${env.name}`);
   if (flags.env && !envSlug) {
     out.warn(`The API returned no slug for "${env.name}", so .env.local does not name it; hosted sign-in will use the default environment's redirect domains.`);
   }
 
-  // .env.local: reuse an existing key unless --force; never print values.
-  const envPath = join(root, ".env.local");
-  const existing = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
-  const current = parseEnv(existing);
   const values: Record<string, string> = {
     NEXT_PUBLIC_USERBOX_TENANT_SLUG: session.tenantSlug,
     NEXT_PUBLIC_USERBOX_API_URL: session.apiUrl,
@@ -146,9 +219,8 @@ export async function init(flags: Flags, out: Output): Promise<void> {
   }
   let keyCreated = false;
   let keyScopes: string[] | null = null;
-  const oldRaw = current.get("USERBOX_API_KEY");
   let replaced: ApiKeySummary | null = null;
-  if (flags.force || !oldRaw) {
+  if (needsKey) {
     // --force replaces the key in .env.local; find the one it replaces first,
     // so it can be revoked once the new key is written.
     if (oldRaw) replaced = await findReplacedKey(session, env, oldRaw, out);

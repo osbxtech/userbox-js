@@ -33,6 +33,13 @@ Secrets never pass through the model:
   (also at the top level of the `--json` document): a founder with no account
   creates one there, in a browser. The CLI never creates accounts.
 - `init` writes the API key straight to `.env.local` and never prints it.
+- `init` first checks that the login holds the console permissions the run
+  needs (`userbox.console.access`, `userbox.tenant.manage` to add a redirect
+  domain, `userbox.api_keys.manage` to create the key). If any is missing it
+  fails with `MISSING_PERMISSIONS` before writing anything; the `--json` error
+  lists them in `missing_permissions` (at the top level). A tenant owner grants
+  them in Console → Users → Edit; you cannot. Any command refused with
+  `INSUFFICIENT_PERMISSION` names the permission the same way.
 - `apply` without `--yes` only prints the plan when there is no terminal: show
   it to the human, then run `apply --yes`. A plan that removes permissions from
   an existing role fails with `NEEDS_HUMAN` even with `--yes`: the human runs
